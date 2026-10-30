@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Radiance Music: a setting sun with four sound bars standing in it (drums, bass, other, vocals) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- the visible middle (72 of 108) holds it as the computer's icon does: the sun 60 % across -->
+    <group android:scaleX="0.73" android:scaleY="0.73" android:pivotX="54" android:pivotY="54">
+        <path android:pathData="M54,55m-29.6,0a29.6,29.6 0,1 1,59.2 0a29.6,29.6 0,1 1,-59.2 0">
+            <aapt:attr name="android:fillColor">
+                <gradient android:type="linear" android:startX="0" android:startY="25.4" android:endX="0" android:endY="84.6"
+                    android:startColor="#FFFFDB94" android:endColor="#FFF38A35" />
+            </aapt:attr>
+        </path>
+        <path android:pathData="M42.5,60V100M50.3,49V100M57.7,55V100M65.5,64V100"
+            android:strokeColor="#FF0C1D38" android:strokeWidth="5" android:strokeLineCap="round" />
+    </group>
+    <!-- the bars' feet into the dark -->
+    <path android:pathData="M0,68h108v40h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="0" android:startY="68" android:endX="0" android:endY="80"
+                android:startColor="#000C1D38" android:endColor="#FF0C1D38" />
+        </aapt:attr>
+    </path>
+</vector>

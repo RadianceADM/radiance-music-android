@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- one colour (Android's themed icons): the sun with four slots, the sound bars -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group android:scaleX="0.8" android:scaleY="0.8" android:pivotX="54" android:pivotY="54">
+    <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd"
+        android:pathData="M54,55m-27,0a27,27 0,1 1,54 0a27,27 0,1 1,-54 0Z M40.5,60a2.5,2.5 0,0 1,5 0V80.5h-5Z M47.8,49a2.5,2.5 0,0 1,5 0V81.8h-5Z M55.2,55a2.5,2.5 0,0 1,5 0V81.7h-5Z M63,64a2.5,2.5 0,0 1,5 0V80.1h-5Z" />
+    </group>
+</vector>

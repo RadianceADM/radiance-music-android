@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- what other apps may read when you share: only the story card just made -->
+<paths>
+    <cache-path name="share" path="share/" />
+</paths>

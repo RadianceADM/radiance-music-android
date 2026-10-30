@@ -1,0 +1,7 @@
+<resources>
+    <color name="navy">#0C1D38</color>
+    <color name="night">#060D1A</color>
+    <color name="orange">#F38A35</color>
+    <!-- the system splash, between the sunrise's sky colours -->
+    <color name="splash">#13294D</color>
+</resources>
