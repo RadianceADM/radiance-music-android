@@ -92,6 +92,9 @@ private fun Radiance() {
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
     var nowPlaying by rememberSaveable { mutableStateOf(false) }
     var settings by rememberSaveable { mutableStateOf(false) }
+    val ctx = LocalContext.current
+    // how to use it: the first time the app opens (under the start's splash, seen as it opens)
+    var guide by rememberSaveable { mutableStateOf(Guide.due(ctx)) }
     Box(Modifier.fillMaxSize()) {
         Scaffold(
             containerColor = Brand.Night,
@@ -122,8 +125,9 @@ private fun Radiance() {
             NowPlayingScreen(onClose = { nowPlaying = false })
         }
         AnimatedVisibility(settings, enter = slideInHorizontally { it }, exit = slideOutHorizontally { it }) {
-            SettingsScreen(onClose = { settings = false })
+            SettingsScreen(onClose = { settings = false }, onGuide = { guide = true })
         }
+        if (guide) GuideScreen(onDone = { Guide.seen(ctx); guide = false })
         val sharing by App.instance.shareOpen.collectAsState()
         sharing?.let { ask -> ShareSongsSheet(ask.songs, ask.scan, onDismiss = { App.instance.shareOpen.value = null }) }
         // the start's sunrise: once a cold start (not with animations turned off)

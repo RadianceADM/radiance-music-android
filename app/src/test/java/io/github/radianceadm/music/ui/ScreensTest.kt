@@ -38,7 +38,8 @@ class ScreensTest {
 
     private fun songs() {
         val lib = App.instance.library
-        listOf("Moolah" to "Young Thug", "Blinding Lights" to "The Weeknd", "Cruel Summer" to "Taylor Swift", "Dilaw" to "Maki", "Pasilyo" to "SunKissed Lola", "Golden Hour" to "JVKE")
+        listOf("Moolah" to "Young Thug", "Blinding Lights" to "The Weeknd", "Cruel Summer" to "Taylor Swift", "Dilaw" to "Maki", "Pasilyo" to "SunKissed Lola", "Golden Hour" to "JVKE",
+            "Araw-Araw" to "Ben&Ben", "Like You Do" to "Joji", "Kathang Isip" to "Ben&Ben", "Tadhana" to "Up Dharma Down", "Espresso" to "Sabrina Carpenter", "Wildflower" to "Billie Eilish", "Sining" to "Dionela", "7 Rings" to "Ariana Grande")
             .forEachIndexed { i, (title, artist) -> lib.like(Track(Source.YOUTUBE, "test$i", title, artist, album = "Album $i", seconds = 200, format = if (i % 2 == 0) "FLAC" else "Opus")) }
     }
 
@@ -53,5 +54,6 @@ class ScreensTest {
         val picked = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateListOf(2, 3) }
         LyricPicker(lines, picked, Color(0xFF5C2A12), withSound = true, onDone = {})
     }
+    @Test fun guide() = shot("guide") { GuideScreen(onDone = {}) }
     @Test fun share() = shot("share") { ShareScreen(Track(Source.YOUTUBE, "test", "Golden Hour", "JVKE", seconds = 209), emptyList(), onClose = {}) }
 }

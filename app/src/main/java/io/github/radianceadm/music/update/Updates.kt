@@ -40,6 +40,8 @@ object Updates {
     private const val PREFS = "updates"
     private const val EVERY_MS = 6 * 60 * 60 * 1000L
     private const val TAG = "RadianceUpdates"
+    /** The count of downloads (owner, 2026-10-31: analytics of downloads): one more update, the version only. */
+    private const val COUNT = "https://admin.radianceph.com/api/music/count"
 
     data class Release(val version: String, val notes: String, val apk: String, val size: Long, val page: String)
 
@@ -109,6 +111,7 @@ object Updates {
                 val file = download(app, r)
                 if (!isActive) return@launch
                 verify(app, file)
+                counted(r)
                 _state.value = State.Installing(r)
                 install(app, file)
             }.onFailure { e ->
@@ -197,6 +200,14 @@ object Updates {
         }
         check(part.renameTo(done)) { "couldn't keep the download" }
         return done
+    }
+
+    /** Adds one to the count of updates (no name, no address: the platform and the version). Never in the way. */
+    private fun counted(r: Release) {
+        runCatching {
+            val req = Request.Builder().url("$COUNT?event=update&platform=android&version=${r.version}").header("User-Agent", "RadianceMusic-Android").build()
+            Http.client.newCall(req).execute().close()
+        }
     }
 
     /** It is this app, newer, and signed with the same key (else Android refuses it anyway, later). */

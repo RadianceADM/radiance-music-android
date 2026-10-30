@@ -2,6 +2,20 @@ package io.github.radianceadm.music.ui
 
 import androidx.compose.material.icons.rounded.SortByAlpha
 import androidx.compose.foundation.background
+import kotlinx.coroutines.launch
+import io.github.radianceadm.music.data.Library
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
 import io.github.radianceadm.music.update.Updates
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -229,8 +243,13 @@ fun LibraryScreen(pad: PaddingValues, onSettings: () -> Unit) {
     val hub = App.instance.player
     val saving by App.instance.status.collectAsState()
     val shown = if (filter.isBlank()) liked else liked.filter { matches(it, filter) }
+    val list = rememberLazyListState()
+    // the A to Z rail, as the computer's: on Liked Songs once there are enough to scroll
+    val rail = tab == 0 && shown.size >= 12
+    Box(Modifier.fillMaxSize()) {
     LazyColumn(
         Modifier.fillMaxSize(),
+        state = list,
         contentPadding = PaddingValues(top = pad.calculateTopPadding(), bottom = pad.calculateBottomPadding() + 12.dp),
     ) {
         item { PageTitle("Library", onSettings) }
@@ -270,12 +289,95 @@ fun LibraryScreen(pad: PaddingValues, onSettings: () -> Unit) {
                 }
             }
             itemsIndexed(shown, key = { _, t -> t.key }) { i, t ->
-                Box(Modifier.padding(horizontal = 8.dp)) { TrackRow(t, onPlay = { hub.play(shown, i) }) }
+                Box(Modifier.padding(start = 8.dp, end = if (rail) 30.dp else 8.dp)) { TrackRow(t, onPlay = { hub.play(shown, i) }) }
             }
         } else {
             if (history.isEmpty()) item { Note("Songs you play show up here, newest first.") }
             itemsIndexed(history) { i, t ->
                 Box(Modifier.padding(horizontal = 8.dp)) { TrackRow(lib.best(t), onPlay = { hub.play(history.drop(i).map { lib.best(it) }, 0) }) }
+            }
+        }
+    }
+    if (rail) {
+        // the songs are the list's last items: whatever comes before them is the header
+        val head = (list.layoutInfo.totalItemsCount - shown.size).coerceAtLeast(0)
+        AzRail(shown, list, head, Modifier.align(Alignment.CenterEnd).padding(top = pad.calculateTopPadding() + 40.dp, bottom = pad.calculateBottomPadding() + 8.dp, end = 2.dp))
+    }
+    }
+}
+
+/** The rail's letters, in the order songs are filed (as the computer's). */
+private const val AZ = "ABCDEFGHIJKLMNOPQRSTUVWXYZ#"
+
+/** A song's letter on the rail: its title's first letter as filed, or # for anything else. */
+fun letterOf(t: Track): Char {
+    val key = Library.fileKey(t.title).second
+    val c = key.firstOrNull()?.uppercaseChar() ?: '#'
+    return if (c in 'A'..'Z') c else '#'
+}
+
+/**
+ * The A to Z rail beside Liked Songs: tap a letter, or slide along it, to jump
+ * there (a big letter shows where you are); letters with no songs stay faint,
+ * and the letter of the songs at the top is lit.
+ */
+@Composable
+private fun AzRail(songs: List<Track>, list: LazyListState, head: Int, modifier: Modifier) {
+    val scope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
+    val firsts = remember(songs) {
+        val m = LinkedHashMap<Char, Int>()
+        songs.forEachIndexed { i, t -> m.putIfAbsent(letterOf(t), i) }
+        m
+    }
+    var held by remember { mutableStateOf<Char?>(null) }
+    val top = (list.firstVisibleItemIndex - head).coerceIn(0, (songs.size - 1).coerceAtLeast(0))
+    val lit = held ?: songs.getOrNull(top)?.let(::letterOf)
+    fun jump(y: Float, height: Int) {
+        val i = ((y / height) * AZ.length).toInt().coerceIn(0, AZ.length - 1)
+        val letter = AZ[i]
+        if (letter == held) return
+        held = letter
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        // that letter, or the next one with songs
+        val at = AZ.substring(i).firstNotNullOfOrNull { firsts[it] } ?: return
+        scope.launch { list.scrollToItem(head + at) }
+    }
+    Box(modifier) {
+        Column(
+            Modifier.width(26.dp).clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = if (held != null) 0.1f else 0.04f)).padding(vertical = 6.dp)
+                .pointerInput(firsts, head) {
+                    detectVerticalDragGestures(
+                        onDragStart = { jump(it.y, size.height) },
+                        onVerticalDrag = { ch, _ -> ch.consume(); jump(ch.position.y, size.height) },
+                        onDragEnd = { held = null },
+                        onDragCancel = { held = null },
+                    )
+                }
+                .pointerInput(firsts, head) { detectTapGestures(onPress = { jump(it.y, size.height); tryAwaitRelease(); held = null }) },
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            AZ.forEach { c ->
+                val has = c in firsts
+                Text(
+                    c.toString(),
+                    color = when {
+                        c == lit -> Color.Black
+                        has -> Brand.Orange
+                        else -> Brand.Orange.copy(alpha = 0.28f)
+                    },
+                    fontSize = 11.sp, lineHeight = 14.sp, fontWeight = FontWeight.ExtraBold,
+                    modifier = Modifier.size(20.dp, 15.dp).clip(CircleShape).background(if (c == lit) Brand.Orange else Color.Transparent).wrapContentHeight(),
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
+    }
+    // where the slide is: the letter big in the middle of the screen
+    held?.let { c ->
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(96.dp).clip(RoundedCornerShape(28.dp)).background(Brand.Card.copy(alpha = 0.92f)), contentAlignment = Alignment.Center) {
+                Text(c.toString(), color = Brand.Orange, fontSize = 52.sp, fontWeight = FontWeight.ExtraBold)
             }
         }
     }

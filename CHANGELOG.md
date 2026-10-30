@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.12
+
+- **How to use it, the first time the app opens:** five cards to swipe through (search, like
+  it and it's saved, split and mix, put it on your story, swipe and send), a few plain words
+  each. Skip any time; Settings → How to use it shows them again.
+- **The A to Z rail on Liked Songs**, as the computer's: tap a letter, or slide along the rail,
+  to jump there (a big letter shows where you are); letters with no songs stay faint, and the
+  letter of the songs at the top is lit.
+- When the app updates itself, it adds one to the count of updates at radianceph.com (only
+  the version: nothing about you), so we know how many people use each version.
+
 ## 0.5.11
 
 - **Choosing lyrics, as Spotify's:** the lyrics big on the story's colour; tap a line and it

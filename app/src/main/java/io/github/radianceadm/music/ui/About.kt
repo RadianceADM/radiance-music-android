@@ -164,7 +164,7 @@ fun UpdatePanel() {
             }
             is Updates.State.UpToDate -> {
                 Text("You have the newest version", color = Color.White, style = MaterialTheme.typography.titleMedium)
-                Text("Radiance Music ${s.version}. It looks for updates by itself, too.", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
+                Text("Radiance Music ${s.version}. It looks for updates by itself, too. When it updates, it adds one to our count of updates (only the version, nothing about you).", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
                 TextButton(onClick = { Updates.check(context) }, contentPadding = ButtonDefaults.TextButtonContentPadding) { Labeled(Icons.Rounded.Refresh, "Look again", Brand.Orange) }
             }
             is Updates.State.Available -> {

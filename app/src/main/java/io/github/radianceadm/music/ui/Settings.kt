@@ -25,6 +25,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.QrCode2
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.SystemUpdate
@@ -62,7 +63,7 @@ import kotlin.math.roundToInt
  * updates, and About.
  */
 @Composable
-fun SettingsScreen(onClose: () -> Unit) {
+fun SettingsScreen(onClose: () -> Unit, onGuide: () -> Unit = {}) {
     var about by rememberSaveable { mutableStateOf(false) }
     BackHandler(enabled = !about, onBack = onClose)
     if (about) {
@@ -100,6 +101,7 @@ fun SettingsScreen(onClose: () -> Unit) {
             }
         }
         SettingsGroup(null) {
+            SettingsItem(Icons.Rounded.School, "How to use it", "The five things to know, as on the first day", arrow = true) { onGuide() }
             SettingsItem(Icons.Rounded.Info, "About Radiance Music", "${Updates.current(context)}, open beta. Updates, what's new, and where to tell us what breaks", arrow = true) { about = true }
         }
     }
