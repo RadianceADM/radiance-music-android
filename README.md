@@ -26,16 +26,20 @@ the Play Store goes on).
   and the song isn't sent anywhere). It pauses when the battery is low or the phone runs hot.
 - **The Mixer:** a slider for each part (No vocals and Vocals only in one tap), plus low cut,
   high cut and reverb for the whole sound.
-- **Share it to your story:** a song's cover, or the lyric lines you pick, as a card made for
-  Instagram and Facebook stories, or saved to your photos.
+- **Share it to your story:** a song's cover, or the lyric lines you pick, as a story made for
+  Instagram and Facebook, in the cover's colours or yours. **With its sound** it's a video of
+  the song itself, those lines lighting up as they're sung. Straight to Instagram or Facebook
+  Stories, Messenger, WhatsApp or TikTok, or saved to your photos.
 - **Send it by QR:** songs go to another phone, or between your computer and your phone, with
   their parts, lyrics and covers; what the other side already has is skipped. With no Wi-Fi
   around, the phone showing the QR makes its own (Wi-Fi Direct).
 - **Plays in the background:** the notification, the lock screen, and headphone and Bluetooth
   buttons. Unplug your headphones and it pauses.
-- **Now Playing:** the cover's colours flow behind it, and the lyrics show the sung line big.
-  Tap a line to go there.
+- **Now Playing:** the cover's colours flow behind it; swipe the cover for the next or previous
+  song. The lyrics light up the line being sung; tap a line to go there.
 - **Queue, Liked Songs (A to Z, searchable) and History.**
+- **Updates over the air:** it tells you when a newer version is out (Settings → About) and
+  installs it, after checking it's this app, signed with the same key.
 
 ## What it needs
 
@@ -60,6 +64,10 @@ The build fetches the splitter's model once (Demucs as ONNX, 166 MB, checked aga
 SHA-256) and puts it inside the app. The release is signed with the key named in
 `signing.properties` (outside this repository; the path comes from `RADIANCE_SIGNING`).
 Without it, the build is signed with the debug key.
+
+`gradle assembleDebug` makes a test build: its own app beside the real one
+(`io.github.radianceadm.music.debug`), without the splitter's model. `connectedDebugAndroidTest`
+runs the device tests on a connected phone (a story video made with a song's sound).
 
 ## YouTube
 

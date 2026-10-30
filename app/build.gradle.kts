@@ -15,10 +15,11 @@ android {
         applicationId = "io.github.radianceadm.music"
         minSdk = 29 // Android 10: saving into Music/ needs no storage permission
         targetSdk = 36
-        versionCode = 16
-        versionName = "0.5.7"
+        versionCode = 19
+        versionName = "0.5.10"
         // 64-bit Arm only: every phone that can split a song (the splitter needs a few GB of memory)
         ndk { abiFilters += listOf("arm64-v8a") }
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     // The release key lives outside the repository (on the build server); see README.
@@ -38,6 +39,10 @@ android {
     }
     testOptions { unitTests.isIncludeAndroidResources = true }
     buildTypes {
+        // a test build: beside the real app (its own name), so a phone's device tests never touch it
+        debug {
+            applicationIdSuffix = ".debug"
+        }
         release {
             // shrunk (most of the size is unused icons); NewPipe and Rhino kept whole (proguard-rules.pro)
             isMinifyEnabled = true
@@ -88,6 +93,10 @@ dependencies {
     implementation("androidx.camera:camera-view:1.6.2")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.17") // the story card drawn on the computer, to look at
+    testImplementation("androidx.compose.ui:ui-test-junit4") // the screens drawn on the computer, to look at
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
+    androidTestImplementation("androidx.test:runner:1.7.0") // the story video made on a real Android (the emulator)
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
     testImplementation("com.microsoft.onnxruntime:onnxruntime:1.31.1") // the splitter's test runs the real model on the computer
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 }
@@ -135,8 +144,23 @@ abstract class SplitterModel : DefaultTask() {
     }
 }
 
+// What's new, on the About page: the changelog goes in with the app.
+abstract class ChangelogAsset : DefaultTask() {
+    @get:InputFile abstract val from: RegularFileProperty
+    @get:OutputDirectory abstract val into: DirectoryProperty
+
+    @TaskAction fun put() {
+        from.get().asFile.copyTo(into.get().asFile.resolve("CHANGELOG.md"), overwrite = true)
+    }
+}
+
 androidComponents {
     onVariants { variant ->
+        val changelog = tasks.register<ChangelogAsset>("${variant.name}ChangelogAsset") {
+            from.set(rootProject.file("CHANGELOG.md"))
+        }
+        variant.sources.assets?.addGeneratedSourceDirectory(changelog, ChangelogAsset::into)
+        if (variant.buildType == "debug") return@onVariants // a test build: small, without the splitter's model
         val model = tasks.register<SplitterModel>("${variant.name}SplitterModel") {
             cache.set(File(gradle.gradleUserHomeDir, "radiance/htdemucs_fp16weights.onnx"))
         }

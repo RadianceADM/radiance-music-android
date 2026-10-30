@@ -7,6 +7,7 @@ import android.os.Bundle
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -57,6 +58,9 @@ class PlayerHub(private val context: Context) {
     val shuffle: StateFlow<Boolean> = _shuffle
     private val _repeat = MutableStateFlow(Player.REPEAT_MODE_OFF)
     val repeat: StateFlow<Int> = _repeat
+    /** The songs either side of this one, as the player goes (shuffled, repeating): the cover you swipe to. */
+    private val _around = MutableStateFlow<Pair<Track?, Track?>>(null to null)
+    val around: StateFlow<Pair<Track?, Track?>> = _around
 
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) = sync()
@@ -100,6 +104,8 @@ class PlayerHub(private val context: Context) {
         if (was != _playing.value) App.instance.mixer.playingChanged(_playing.value)
         _shuffle.value = c.shuffleModeEnabled
         _repeat.value = c.repeatMode
+        val at = { i: Int -> if (i == C.INDEX_UNSET || i == c.currentMediaItemIndex) null else trackOf(c.getMediaItemAt(i)) }
+        _around.value = at(c.previousMediaItemIndex) to at(c.nextMediaItemIndex)
     }
 
     val position: Long get() = controller?.currentPosition ?: 0
@@ -133,6 +139,8 @@ class PlayerHub(private val context: Context) {
     fun toggle() = controller?.run { if (isPlaying) pause() else { if (playbackState == Player.STATE_IDLE) prepare(); play() } }
     fun next() = controller?.seekToNextMediaItem()
     fun previous() = controller?.run { if (currentPosition > 4000 || !hasPreviousMediaItem()) seekTo(0) else seekToPreviousMediaItem() }
+    /** The song before, whatever the place in this one (a swipe on the cover). */
+    fun previousSong() = controller?.run { if (hasPreviousMediaItem()) seekToPreviousMediaItem() else seekTo(0) }
     fun seek(ms: Long) = controller?.seekTo(ms)
     fun playAt(i: Int) = controller?.run { seekTo(i, 0); play() }
     fun remove(i: Int) = controller?.removeMediaItem(i)

@@ -1,6 +1,17 @@
 package io.github.radianceadm.music.ui
 
 import androidx.compose.foundation.background
+import io.github.radianceadm.music.update.Updates
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Badge
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,7 +30,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.QrCode2
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -28,9 +38,6 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
@@ -72,16 +79,17 @@ private fun greeting(): String = when (Calendar.getInstance().get(Calendar.HOUR_
 }
 
 @Composable
-fun HomeScreen(pad: PaddingValues, onSearch: () -> Unit) {
+fun HomeScreen(pad: PaddingValues, onSearch: () -> Unit, onSettings: () -> Unit) {
     val lib = App.instance.library
     val liked by lib.liked.collectAsState()
     val history by lib.history.collectAsState()
     val hub = App.instance.player
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = pad.calculateTopPadding() + 12.dp, bottom = pad.calculateBottomPadding() + 16.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = pad.calculateTopPadding(), bottom = pad.calculateBottomPadding() + 16.dp)) {
+        item { PageTitle("Home", onSettings) }
         item {
             Column(
                 Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(26.dp))
-                    .background(Brush.linearGradient(listOf(Brand.Navy, Color(0xFF3A2A44), Brand.Orange.copy(alpha = 0.75f))))
+                    .background(Brush.linearGradient(listOf(Brand.Card, Color(0xFF5C2A12), Brand.Orange.copy(alpha = 0.8f))))
                     .padding(24.dp),
             ) {
                 Text(greeting(), style = MaterialTheme.typography.displaySmall, color = Color.White)
@@ -204,8 +212,14 @@ fun SearchScreen(pad: PaddingValues) {
     }
 }
 
+/**
+ * Library, roomy (owner, 2026-10-31: "ang panget ng library", "ang sikip sa taas"):
+ * a big title with Settings beside it, the two lists as pills, the search, then
+ * Play and Shuffle side by side, all scrolling away with the songs. Sharing songs
+ * by QR lives in Settings now.
+ */
 @Composable
-fun LibraryScreen(pad: PaddingValues) {
+fun LibraryScreen(pad: PaddingValues, onSettings: () -> Unit) {
     var tab by rememberSaveable { mutableStateOf(0) }
     var filter by rememberSaveable { mutableStateOf("") }
     val lib = App.instance.library
@@ -213,42 +227,94 @@ fun LibraryScreen(pad: PaddingValues) {
     val history by lib.history.collectAsState()
     val hub = App.instance.player
     val saving by App.instance.status.collectAsState()
-    Column(Modifier.fillMaxSize().padding(top = pad.calculateTopPadding())) {
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(16.dp)) {
-            listOf("Liked Songs", "History").forEachIndexed { i, label ->
-                SegmentedButton(selected = tab == i, onClick = { tab = i }, shape = SegmentedButtonDefaults.itemShape(i, 2)) { Text(label) }
+    val shown = if (filter.isBlank()) liked else liked.filter { matches(it, filter) }
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(top = pad.calculateTopPadding(), bottom = pad.calculateBottomPadding() + 12.dp),
+    ) {
+        item { PageTitle("Library", onSettings) }
+        item {
+            Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Chip("Liked Songs", if (liked.isEmpty()) null else liked.size, tab == 0) { tab = 0 }
+                Chip("History", null, tab == 1) { tab = 1 }
             }
         }
-        saving?.let { Note(it) }
+        saving?.let { item { Note(it) } }
         if (tab == 0) {
-            TextField(
-                value = filter,
-                onValueChange = { filter = it },
-                placeholder = { Text("Search your liked songs") },
-                leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                singleLine = true,
-                shape = RoundedCornerShape(50),
-                colors = TextFieldDefaults.colors(focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent, focusedContainerColor = Brand.Card, unfocusedContainerColor = Brand.Card),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            )
-            val shown = if (filter.isBlank()) liked else liked.filter { matches(it, filter) }
-            // how many, on a line of its own (it never squeezes beside the buttons on a narrow phone)
-            Text("${liked.size} song${if (liked.size == 1) "" else "s"}, saved on this phone", color = Brand.Dim, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp))
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Button(onClick = { hub.play(shown, 0) }, enabled = shown.isNotEmpty()) { Text("Play") }
-                FilledTonalButton(onClick = { hub.play(shown.shuffled(), 0) }, enabled = shown.isNotEmpty()) { Text("Shuffle") }
-                Spacer(Modifier.weight(1f))
-                IconButton(onClick = { App.instance.shareOpen.value = App.ShareAsk(null) }) { Icon(Icons.Rounded.QrCode2, "Share songs", tint = Color.White) }
+            item {
+                TextField(
+                    value = filter,
+                    onValueChange = { filter = it },
+                    placeholder = { Text("Search your liked songs") },
+                    leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                    trailingIcon = { if (filter.isNotEmpty()) IconButton(onClick = { filter = "" }) { Icon(Icons.Rounded.Close, "Clear") } },
+                    singleLine = true,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = TextFieldDefaults.colors(focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent, focusedContainerColor = Brand.Card, unfocusedContainerColor = Brand.Card),
+                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp),
+                )
             }
-            if (liked.isEmpty()) Note("Like a song (the heart) and it's saved here, with its cover, lyrics and music video.")
-            LazyColumn(contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = pad.calculateBottomPadding())) {
-                itemsIndexed(shown, key = { _, t -> t.key }) { i, t -> TrackRow(t, onPlay = { hub.play(shown, i) }) }
+            if (liked.isEmpty()) {
+                item { Note("Like a song (the heart) and it's saved here, with its cover, lyrics and music video.") }
+            } else {
+                item {
+                    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        BigButton(Icons.Rounded.PlayArrow, "Play", shown.isNotEmpty(), Modifier.weight(1f)) { hub.play(shown, 0) }
+                        BigButton(Icons.Rounded.Shuffle, "Shuffle", shown.isNotEmpty(), Modifier.weight(1f)) { hub.play(shown.shuffled(), 0) }
+                    }
+                }
+                item {
+                    val n = if (filter.isBlank()) "${liked.size} song${if (liked.size == 1) "" else "s"}, saved on this phone" else "${shown.size} of ${liked.size} songs"
+                    Text(n, color = Brand.Dim, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 4.dp))
+                }
+            }
+            itemsIndexed(shown, key = { _, t -> t.key }) { i, t ->
+                Box(Modifier.padding(horizontal = 8.dp)) { TrackRow(t, onPlay = { hub.play(shown, i) }) }
             }
         } else {
-            if (history.isEmpty()) Note("Songs you play show up here, newest first.")
-            LazyColumn(contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = pad.calculateBottomPadding())) {
-                itemsIndexed(history) { i, t -> TrackRow(lib.best(t), onPlay = { hub.play(history.drop(i).map { lib.best(it) }, 0) }) }
+            if (history.isEmpty()) item { Note("Songs you play show up here, newest first.") }
+            itemsIndexed(history) { i, t ->
+                Box(Modifier.padding(horizontal = 8.dp)) { TrackRow(lib.best(t), onPlay = { hub.play(history.drop(i).map { lib.best(it) }, 0) }) }
             }
         }
+    }
+}
+
+/** A page's big title, with Settings at the right (a dot on it when an update is out). */
+@Composable
+fun PageTitle(title: String, onSettings: () -> Unit) {
+    val update by Updates.state.collectAsState()
+    Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 14.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.ExtraBold, color = Color.White, modifier = Modifier.weight(1f))
+        IconButton(onClick = onSettings) {
+            BadgedBox(badge = { if (update is Updates.State.Available) Badge(containerColor = Brand.Orange) }) {
+                Icon(Icons.Rounded.Settings, "Settings", tint = Color.White)
+            }
+        }
+    }
+}
+
+@Composable
+private fun Chip(label: String, count: Int?, on: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier.clip(RoundedCornerShape(50)).background(if (on) Color.White else Brand.Card).clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, color = if (on) Color.Black else Color.White, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+        count?.let { Text("  $it", color = if (on) Color.Black.copy(alpha = 0.55f) else Brand.Dim, style = MaterialTheme.typography.labelLarge) }
+    }
+}
+
+/** Play or Shuffle: wide, side by side, as Apple Music's. */
+@Composable
+private fun BigButton(icon: ImageVector, label: String, enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    Row(
+        modifier.clip(RoundedCornerShape(14.dp)).background(Brand.Card).clickable(enabled = enabled, onClick = onClick).padding(vertical = 13.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, null, tint = Brand.Orange, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(label, color = Brand.Orange, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
     }
 }

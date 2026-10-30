@@ -61,17 +61,17 @@ import io.github.radianceadm.music.share.ShareService
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ShareSongsSheet(songs: List<Track>?, onDismiss: () -> Unit) {
+fun ShareSongsSheet(songs: List<Track>?, scan: Boolean = false, onDismiss: () -> Unit) {
     val share = App.instance.share
     val state by share.state.collectAsState()
     ModalBottomSheet(
         onDismissRequest = { if (state is Session.State.Idle || state is Session.State.Done || state is Session.State.Failed) { share.close(); onDismiss() } else onDismiss() },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = Brand.Navy,
+        containerColor = Brand.Sheet,
     ) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 22.dp, end = 22.dp, bottom = 28.dp)) {
             when (val s = state) {
-                is Session.State.Idle -> Start(songs)
+                is Session.State.Idle -> Start(songs, scan)
                 is Session.State.Opening -> Waiting("Getting the QR ready…") { share.close() }
                 is Session.State.Showing -> Showing(s) { share.close() }
                 is Session.State.Connecting -> Waiting("Connecting to ${s.to}…") { share.cancel() }
@@ -95,12 +95,12 @@ private fun Title(text: String, note: String? = null) {
 private fun directPermission() = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.NEARBY_WIFI_DEVICES else Manifest.permission.ACCESS_FINE_LOCATION
 
 @Composable
-private fun Start(songs: List<Track>?) {
+private fun Start(songs: List<Track>?, scan: Boolean) {
     val app = App.instance
     val share = app.share
     val context = LocalContext.current
     val liked by app.library.liked.collectAsState()
-    var scanning by remember { mutableStateOf(false) }
+    var scanning by remember { mutableStateOf(scan) }
     var videos by remember { mutableStateOf(false) }
     var direct by remember { mutableStateOf(true) }
     val all = (songs ?: liked).filter { it.file != null }
@@ -177,7 +177,7 @@ private fun Waiting(what: String, onCancel: () -> Unit) {
 @Composable
 private fun Showing(s: Session.State.Showing, onStop: () -> Unit) {
     val t = s.ticket
-    Title(if (t.mode == "get") "Scan to take ${s.what.removePrefix("Send ")}" else "Scan to send songs here", "With Radiance Music on the other phone: Library → Share songs → Scan a QR. It takes only what it hasn't got.")
+    Title(if (t.mode == "get") "Scan to take ${s.what.removePrefix("Send ")}" else "Scan to send songs here", "With Radiance Music on the other phone: Settings → Get songs. It takes only what it hasn't got.")
     QrCode(t.toUri(), Modifier.fillMaxWidth().padding(horizontal = 18.dp))
     Gap(12.dp)
     val ways = listOfNotNull(t.host?.let { "this Wi-Fi" }, t.group?.let { "this phone's own Wi-Fi (${it.removePrefix("DIRECT-rm-")})" })

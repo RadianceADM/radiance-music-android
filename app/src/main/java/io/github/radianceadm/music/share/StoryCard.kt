@@ -41,7 +41,10 @@ object StoryCard {
     private const val SAFE_TOP = 250
     private const val FOOTER_Y = H - 330
 
-    private const val NAVY = 0xFF0C1D38.toInt()
+    /** The shade over the blurred cover, and the card's colour without a cover (no navy: the app's own dark and Stone). */
+    private const val SHADE = 0xFF000000.toInt()
+    private const val STONE = 0xFF292524.toInt()
+    private const val SUNSET = 0xFF7A3410.toInt()
     private const val ORANGE = 0xFFF38A35.toInt()
 
     /** The song's cover (the saved one, else from the web), or null. Worker thread. */
@@ -77,14 +80,19 @@ object StoryCard {
         c.restoreToCount(save)
     }
 
-    fun draw(context: Context, t: Track, art: Bitmap?, lyrics: List<String>): Bitmap {
+    /**
+     * The card: [tone] a colour picked for it (else the cover's own, over its glow);
+     * [lit] the line being sung (a video's frame: -1 none yet; null: all lit).
+     */
+    fun draw(context: Context, t: Track, art: Bitmap?, lyrics: List<String>, tone: Int? = null, lit: Int? = null): Bitmap {
         tileBack = ContextCompat.getDrawable(context, R.drawable.ic_launcher_background)
         tileFront = ContextCompat.getDrawable(context, R.drawable.ic_launcher_foreground)
         val out = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)
         val c = Canvas(out)
-        val tone = art?.let { toneOf(it) } ?: 0xFF1B3157.toInt()
-        background(c, art, tone)
-        if (lyrics.isEmpty()) coverCard(c, t, art) else lyricsCard(c, t, art, lyrics, tone)
+        val picked = tone
+        val tone = picked ?: art?.let { toneOf(it) } ?: STONE
+        background(c, if (picked == null) art else null, tone)
+        if (lyrics.isEmpty()) coverCard(c, t, art) else lyricsCard(c, t, art, lyrics, tone, lit)
         footer(context, c)
         return out
     }
@@ -104,8 +112,38 @@ object StoryCard {
         return ColorUtils.HSLToColor(hsl)
     }
 
+    /**
+     * Colours to pick for the card: the cover's own (its main colours, deep enough
+     * for white words), then black, stone and Radiance's sunset.
+     */
+    fun swatches(art: Bitmap?): List<Int> {
+        val own = mutableListOf<Int>()
+        if (art != null) {
+            own += toneOf(art)
+            val tiny = Bitmap.createScaledBitmap(art, 24, 24, true)
+            // the cover's colours by hue (12 of them), the most common first
+            val buckets = HashMap<Int, MutableList<FloatArray>>()
+            val hsl = FloatArray(3)
+            for (x in 0 until 24) for (y in 0 until 24) {
+                val p = tiny.getPixel(x, y)
+                ColorUtils.RGBToHSL(Color.red(p), Color.green(p), Color.blue(p), hsl)
+                if (hsl[1] < 0.22f || hsl[2] < 0.08f || hsl[2] > 0.92f) continue
+                buckets.getOrPut((hsl[0] / 30f).toInt() % 12) { mutableListOf() } += hsl.copyOf()
+            }
+            for (b in buckets.values.sortedByDescending { it.size }.take(3)) {
+                val h = b.map { it[0] }.average().toFloat()
+                val sat = b.map { it[1] }.average().toFloat().coerceIn(0.3f, 0.75f)
+                val c = ColorUtils.HSLToColor(floatArrayOf(h, sat, 0.26f))
+                if (own.none { distance(it, c) < 60 }) own += c
+            }
+        }
+        return (own + listOf(SHADE, STONE, SUNSET)).distinct()
+    }
+
+    private fun distance(a: Int, b: Int) = kotlin.math.abs(Color.red(a) - Color.red(b)) + kotlin.math.abs(Color.green(a) - Color.green(b)) + kotlin.math.abs(Color.blue(a) - Color.blue(b))
+
     private fun background(c: Canvas, art: Bitmap?, tone: Int) {
-        c.drawColor(if (art == null) NAVY else tone)
+        c.drawColor(tone)
         if (art != null) {
             // the cover blurred to a glow: made tiny, then drawn big (smoothly), twice
             val tiny = Bitmap.createScaledBitmap(Bitmap.createScaledBitmap(art, 24, 24, true), 12, 21, true)
@@ -115,7 +153,7 @@ object StoryCard {
         }
         // deeper at the top and the bottom, where the words are
         val shade = Paint().apply {
-            shader = LinearGradient(0f, 0f, 0f, H.toFloat(), intArrayOf(ColorUtils.setAlphaComponent(NAVY, 110), ColorUtils.setAlphaComponent(NAVY, 40), ColorUtils.setAlphaComponent(NAVY, 190)), floatArrayOf(0f, 0.45f, 1f), Shader.TileMode.CLAMP)
+            shader = LinearGradient(0f, 0f, 0f, H.toFloat(), intArrayOf(ColorUtils.setAlphaComponent(SHADE, 110), ColorUtils.setAlphaComponent(SHADE, 40), ColorUtils.setAlphaComponent(SHADE, 190)), floatArrayOf(0f, 0.45f, 1f), Shader.TileMode.CLAMP)
         }
         c.drawRect(0f, 0f, W.toFloat(), H.toFloat(), shade)
         // a warm glow low down (Radiance's)
@@ -176,7 +214,7 @@ object StoryCard {
     }
 
     /** Lyrics: a rounded card in the cover's colour, the cover small with the song beside it, then the lines big. */
-    private fun lyricsCard(c: Canvas, t: Track, art: Bitmap?, lines: List<String>, tone: Int) {
+    private fun lyricsCard(c: Canvas, t: Track, art: Bitmap?, lines: List<String>, tone: Int, lit: Int?) {
         val left = 70f
         val right = W - 70f
         val pad = 64f
@@ -209,7 +247,14 @@ object StoryCard {
         title.drawAt(c, besideX, textTop)
         by.drawAt(c, besideX, textTop + title.height + 8)
         var y = top + pad + head + 56
-        for (l in lyric) {
+        for ((i, line) in lines.withIndex()) {
+            // a video's frame: the sung line white, the rest dimmer (sung ones a little less)
+            val alpha = when {
+                lit == null || i == lit -> 255
+                i < lit -> 150
+                else -> 105
+            }
+            val l = if (alpha == 255) lyric[i] else layout(line, text(size, true, alpha), inner, Layout.Alignment.ALIGN_NORMAL, 4, 1.12f)
             l.drawAt(c, left + pad, y)
             y += l.height + gapOf(size)
         }

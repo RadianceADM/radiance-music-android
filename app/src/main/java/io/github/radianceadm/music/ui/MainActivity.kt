@@ -9,7 +9,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -70,6 +72,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         App.instance.splits.start() // songs left waiting to be split go on
+        io.github.radianceadm.music.update.Updates.resumed(this) // back from allowing updates to install
     }
 
     override fun onStop() {
@@ -88,6 +91,7 @@ private enum class Tab(val label: String, val icon: ImageVector) {
 private fun Radiance() {
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
     var nowPlaying by rememberSaveable { mutableStateOf(false) }
+    var settings by rememberSaveable { mutableStateOf(false) }
     Box(Modifier.fillMaxSize()) {
         Scaffold(
             containerColor = Brand.Night,
@@ -109,16 +113,19 @@ private fun Radiance() {
             },
         ) { pad ->
             when (tab) {
-                Tab.Home -> HomeScreen(pad, onSearch = { tab = Tab.Search })
+                Tab.Home -> HomeScreen(pad, onSearch = { tab = Tab.Search }, onSettings = { settings = true })
                 Tab.Search -> SearchScreen(pad)
-                Tab.Library -> LibraryScreen(pad)
+                Tab.Library -> LibraryScreen(pad, onSettings = { settings = true })
             }
         }
         AnimatedVisibility(nowPlaying, enter = slideInVertically { it }, exit = slideOutVertically { it }) {
             NowPlayingScreen(onClose = { nowPlaying = false })
         }
+        AnimatedVisibility(settings, enter = slideInHorizontally { it }, exit = slideOutHorizontally { it }) {
+            SettingsScreen(onClose = { settings = false })
+        }
         val sharing by App.instance.shareOpen.collectAsState()
-        sharing?.let { ask -> ShareSongsSheet(ask.songs, onDismiss = { App.instance.shareOpen.value = null }) }
+        sharing?.let { ask -> ShareSongsSheet(ask.songs, ask.scan, onDismiss = { App.instance.shareOpen.value = null }) }
         // the start's sunrise: once a cold start (not with animations turned off)
         val context = LocalContext.current
         var splash by remember {

@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.5.10
+
+- **Share, as Spotify's:** a screen of its own with the story big. Cover or Lyrics (pick up to
+  five lines), its colour (the cover's own colours, black, stone or sunset), and the apps on
+  your phone in a row: Instagram Stories and Facebook Stories go straight to the story, then
+  Messenger, WhatsApp, TikTok and others you have, Save, and More (Android's share menu).
+- **Stories with the song's sound:** "With sound" makes the story a video (MP4) of the song
+  itself, clipped to the lines you picked, each lighting up as it's sung, fading in and out
+  (without lines: 15 seconds from where you are in the song). It's made on your phone in a
+  few seconds. The sound comes from the song's saved copy, so a song you've liked.
+
+## 0.5.9
+
+- **Updates over the air:** the app looks for a newer version by itself (at most every six
+  hours) and from About. Tap Update now: it downloads inside the app, checks that it really
+  is Radiance Music, signed with the same key and newer, and Android installs it (it asks you
+  to confirm, and once to allow updates from the app). A dot on Settings says one is out.
+- **About:** the app's own page, as the computer app's: the version (an open beta), updates,
+  what's new in this version and earlier ones, where to report a problem or email us, the code,
+  and who the music, lyrics and parts come from.
+- **Settings:** a gear beside Home and Library. Sharing songs is here now (Send songs, Get songs
+  and Receive songs here), with how many cores splitting may use, the look (True Black or
+  Stone) and About.
+- **Now Playing, as Apple Music's:** the cover big (a little smaller while paused); swipe it
+  left or right for the next or previous song, or down to close. A thin white bar with the time
+  left, white controls without the orange circle, and a row of Lyrics (a quote bubble, not a
+  mic), Mixer, Share and Queue. With lyrics on, the cover goes small beside the song and every
+  line is as big, the sung one lit. Shuffle and Repeat are in the Queue.
+- **Swipe the mini player** for the next or previous song too.
+- **Library, roomier:** a big title, Liked Songs and History as pills, the search, then wide
+  Play and Shuffle buttons, all scrolling away with your songs.
+- **Home:** the artist under a card isn't cut off any more, and the top card is sunset, not
+  purple.
+- **The look is True Black or Stone everywhere** (no navy left): the sheets, cards and the
+  splash.
+
+## 0.5.8
+
+- **Fixed: sending songs by QR.** Scanning a computer's or another phone's QR said "couldn't
+  reach": Android blocks plain HTTP unless an app allows it, and a share between your devices
+  uses it (on your own network, guarded by the share's own key). The app allows it now; what it
+  asks of the internet stays HTTPS. When a device can't be reached, the reason goes in the log.
+
 ## 0.5.7
 
 - Story cards say where to get the app at its own site now: "Get it free at

@@ -310,7 +310,7 @@ object Wire {
         val req = if (mode == "get") Request.Builder().url(url(base, "/list", key)).build()
         else Request.Builder().url(url(base, "/plan", key)).post("{\"songs\":[]}".toRequestBody("application/json".toMediaType())).build()
         http.newBuilder().connectTimeout(2, TimeUnit.SECONDS).build().newCall(req).execute().use { it.code == 200 }
-    }.getOrDefault(false)
+    }.onFailure { e -> runCatching { android.util.Log.w("radiance-share", "can't reach $base: $e") } }.getOrDefault(false) // (no Log in the computer's tests)
 
     /** Takes what's missing here of what [base] offers, into [store]. How many songs came. */
     fun pull(base: String, key: String, store: Store, pace: Pace = Pace { 0 }, cancelled: () -> Boolean = { false }, progress: (Progress) -> Unit = {}): Int {

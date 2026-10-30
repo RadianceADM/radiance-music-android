@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Songs go between your devices (a QR share) over plain HTTP on your own network: a phone or a
+  computer at an address of its own (192.168.x.x, 10.x.x.x, the Wi-Fi Direct group's 192.168.49.1),
+  which can't have a certificate. Android blocks that by default, so it's allowed here; each share is
+  guarded by its own 128-bit key (in the QR), and everything the app asks of the internet is HTTPS.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

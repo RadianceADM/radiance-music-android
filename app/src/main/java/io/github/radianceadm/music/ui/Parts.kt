@@ -108,7 +108,8 @@ fun TrackRow(t: Track, onPlay: () -> Unit, highlight: Boolean = false, trailing:
 /** A song as a big cover with its title under it (Home's rows). */
 @Composable
 fun Card(t: Track, onPlay: () -> Unit, size: Dp = 150.dp) {
-    Column(Modifier.width(size).clip(RoundedCornerShape(16.dp)).combinedClickableSimple(onPlay)) {
+    // (the cover rounds itself: a clip on the whole card cut the corner off the artist's line)
+    Column(Modifier.width(size).combinedClickableSimple(onPlay).padding(bottom = 2.dp)) {
         Artwork(t.art, size, corner = 16.dp)
         Text(t.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
         Text(t.artist, style = MaterialTheme.typography.bodyMedium, color = Brand.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)

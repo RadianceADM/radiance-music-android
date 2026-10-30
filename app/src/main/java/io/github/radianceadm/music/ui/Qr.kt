@@ -56,7 +56,7 @@ fun QrCode(text: String, modifier: Modifier = Modifier) {
     val matrix = remember(text) {
         QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, 0, 0, mapOf(EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.M, EncodeHintType.MARGIN to 0))
     }
-    val ink = Brand.Navy
+    val ink = Brand.Sheet
     Box(modifier.clip(RoundedCornerShape(24.dp)).background(Color.White).padding(18.dp)) {
         Canvas(Modifier.fillMaxWidth().aspectRatio(1f)) {
             val n = matrix.width

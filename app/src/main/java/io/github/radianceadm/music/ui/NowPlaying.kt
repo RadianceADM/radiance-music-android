@@ -4,6 +4,43 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.BackHandler
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
+import kotlin.math.abs
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.shadow
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material.icons.rounded.QrCode2
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.IosShare
+import androidx.compose.material.icons.rounded.FormatQuote
+import androidx.compose.material.icons.rounded.FastRewind
+import androidx.compose.material.icons.rounded.FastForward
+import androidx.compose.material.icons.rounded.ChatBubbleOutline
+import androidx.compose.material.icons.rounded.ChatBubble
+import androidx.compose.material.icons.automirrored.rounded.FormatListBulleted
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Animatable
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.LinearEasing
@@ -42,29 +79,22 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Shuffle
-import androidx.compose.material.icons.rounded.SkipNext
-import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -121,7 +151,7 @@ fun Backdrop(art: String?) {
     val drift by flow.animateFloat(-1f, 1f, infiniteRepeatable(tween(11_000), RepeatMode.Reverse), label = "drift")
     val sway by flow.animateFloat(-1f, 1f, infiniteRepeatable(tween(13_000), RepeatMode.Reverse), label = "sway")
     val soft = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    BoxWithConstraints(Modifier.fillMaxSize().background(Brand.Navy)) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(Brand.Sheet)) {
         val side = maxOf(maxWidth, maxHeight)
         if (!art.isNullOrEmpty()) {
             AsyncImage(
@@ -159,6 +189,13 @@ private fun rememberPosition(): Pair<Long, Long> {
     return position to duration
 }
 
+/**
+ * Now Playing, as Apple Music's (owner, 2026-10-31): the cover big, a little smaller
+ * while paused; swipe it left or right for the next or previous song, and down to
+ * close. Under it the song, a thin white bar, white controls, and a row of Lyrics
+ * (a quote bubble, not a mic), Mixer, Share and Queue. With lyrics on, the cover
+ * goes small at the top beside the song.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NowPlayingScreen(onClose: () -> Unit) {
@@ -166,71 +203,256 @@ fun NowPlayingScreen(onClose: () -> Unit) {
     val hub = App.instance.player
     val current by hub.current.collectAsState()
     val playing by hub.playing.collectAsState()
-    val shuffle by hub.shuffle.collectAsState()
-    val repeat by hub.repeat.collectAsState()
-    var showLyrics by remember { mutableStateOf(false) }
+    val around by hub.around.collectAsState()
+    var showLyrics by rememberSaveable { mutableStateOf(false) }
     var showQueue by remember { mutableStateOf(false) }
     var sharing by remember { mutableStateOf<List<String>?>(null) } // open, with the lines to start with
     var showMixer by remember { mutableStateOf(false) }
     val mixable by App.instance.mixer.available.collectAsState()
     val t = current
     val (position, duration) = rememberPosition()
-    Box(Modifier.fillMaxSize()) {
+    val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    // pulled down (from the top or the cover): far enough closes it
+    val pull = remember { Animatable(0f) }
+    val pulled = { dy: Float -> scope.launch { pull.snapTo((pull.value + dy).coerceAtLeast(0f)) }; Unit }
+    val let = { velocity: Float ->
+        scope.launch {
+            if (pull.value > with(density) { 140.dp.toPx() } || velocity > 1800f) onClose() else pull.animateTo(0f, spring(dampingRatio = 0.8f))
+        }
+        Unit
+    }
+    Box(Modifier.fillMaxSize().graphicsLayer { translationY = pull.value }.clip(RoundedCornerShape(if (pull.value > 1f) 28.dp else 0.dp))) {
         Backdrop(t?.art)
-        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 22.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onClose) { Icon(Icons.Rounded.KeyboardArrowDown, "Close", tint = Color.White, modifier = Modifier.size(32.dp)) }
-                Spacer(Modifier.weight(1f))
-                if (t != null) IconButton(onClick = { showMixer = true }) { Icon(Icons.Rounded.Tune, "Mixer", tint = Color.White) }
-                IconButton(onClick = { showLyrics = !showLyrics }) { Icon(Icons.Rounded.Mic, "Lyrics", tint = if (showLyrics) Brand.Orange else Color.White) }
-                IconButton(onClick = { showQueue = true }) { Icon(Icons.AutoMirrored.Rounded.QueueMusic, "Queue", tint = Color.White) }
-                if (t != null) IconButton(onClick = { sharing = emptyList() }) { Icon(Icons.Rounded.Share, "Share", tint = Color.White) }
-            }
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                if (t != null && showLyrics) {
-                    LyricsView(t, position, onShareLine = { sharing = listOf(it) })
-                } else {
-                    Artwork(t?.art, 320.dp, corner = 22.dp, modifier = Modifier.fillMaxWidth().aspectRatio(1f))
+        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 26.dp)) {
+            Grabber(onClose, pulled, let)
+            if (t != null && showLyrics) {
+                Row(Modifier.padding(top = 6.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(60.dp).shadow(10.dp, RoundedCornerShape(8.dp)).clip(RoundedCornerShape(8.dp)).background(Brand.Card)) {
+                        if (!t.art.isNullOrEmpty()) AsyncImage(t.art, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    SongTitle(t, Modifier.weight(1f), small = true)
+                    Heart(t)
+                    More(t, onShare = { sharing = emptyList() }, onMixer = { showMixer = true })
+                }
+                Box(Modifier.weight(1f).fillMaxWidth()) { LyricsView(t, position, onShareLine = { sharing = listOf(it) }) }
+            } else {
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    SwipeCover(t, around, playing, pulled, let)
+                }
+                Row(Modifier.padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                    SongTitle(t, Modifier.weight(1f), small = false)
+                    if (t != null) {
+                        Heart(t)
+                        More(t, onShare = { sharing = emptyList() }, onMixer = { showMixer = true })
+                    }
                 }
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(t?.title ?: "Nothing playing", style = MaterialTheme.typography.headlineSmall, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text(t?.byline().orEmpty(), color = Color.White.copy(alpha = 0.75f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Scrubber(position, duration, t) { hub.seek((it * duration).toLong()) }
+            Row(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 10.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { hub.previous() }, modifier = Modifier.size(72.dp)) { Icon(Icons.Rounded.FastRewind, "Previous", tint = Color.White, modifier = Modifier.size(44.dp)) }
+                IconButton(onClick = { hub.toggle() }, modifier = Modifier.size(88.dp)) {
+                    Icon(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (playing) "Pause" else "Play", tint = Color.White, modifier = Modifier.size(64.dp))
                 }
-                if (t != null) Heart(t)
+                IconButton(onClick = { hub.next() }, modifier = Modifier.size(72.dp)) { Icon(Icons.Rounded.FastForward, "Next", tint = Color.White, modifier = Modifier.size(44.dp)) }
             }
-            if (t != null) Row(Modifier.padding(top = 6.dp)) { Quality(t) }
-            var dragging by remember { mutableStateOf<Float?>(null) }
-            val fraction = if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f
-            Slider(
-                value = dragging ?: fraction,
-                onValueChange = { dragging = it },
-                onValueChangeFinished = { dragging?.let { hub.seek((it * duration).toLong()) }; dragging = null },
-                colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Brand.Orange, inactiveTrackColor = Color.White.copy(alpha = 0.25f)),
-                modifier = Modifier.padding(top = 10.dp),
-            )
-            Row {
-                Text(clock(position / 1000), color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
-                Spacer(Modifier.weight(1f))
-                Text(clock(duration / 1000), color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
-            }
-            Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { hub.toggleShuffle() }) { Icon(Icons.Rounded.Shuffle, "Shuffle", tint = if (shuffle) Brand.Orange else Color.White.copy(alpha = 0.7f)) }
-                IconButton(onClick = { hub.previous() }) { Icon(Icons.Rounded.SkipPrevious, "Previous", tint = Color.White, modifier = Modifier.size(38.dp)) }
-                FilledIconButton(onClick = { hub.toggle() }, modifier = Modifier.size(72.dp), colors = IconButtonDefaults.filledIconButtonColors(containerColor = Brand.Orange)) {
-                    Icon(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (playing) "Pause" else "Play", tint = Color.White, modifier = Modifier.size(40.dp))
-                }
-                IconButton(onClick = { hub.next() }) { Icon(Icons.Rounded.SkipNext, "Next", tint = Color.White, modifier = Modifier.size(38.dp)) }
-                IconButton(onClick = { hub.cycleRepeat() }) {
-                    Icon(if (repeat == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat, "Repeat", tint = if (repeat != Player.REPEAT_MODE_OFF) Brand.Orange else Color.White.copy(alpha = 0.7f))
-                }
+            Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                RoundToggle(showLyrics, "Lyrics", { showLyrics = !showLyrics }) { on -> LyricsIcon(on) }
+                RoundToggle(false, "Mixer", { if (t != null) showMixer = true }) { Icon(Icons.Rounded.Tune, null, tint = Color.White.copy(alpha = 0.85f)) }
+                RoundToggle(false, "Share", { if (t != null) sharing = emptyList() }) { Icon(Icons.Rounded.IosShare, null, tint = Color.White.copy(alpha = 0.85f)) }
+                RoundToggle(false, "Queue", { showQueue = true }) { Icon(Icons.AutoMirrored.Rounded.FormatListBulleted, null, tint = Color.White.copy(alpha = 0.85f)) }
             }
         }
     }
     if (t != null) sharing?.let { start -> ShareSheet(t, start, onDismiss = { sharing = null }) }
-    if (showQueue) ModalBottomSheet(onDismissRequest = { showQueue = false }, containerColor = Brand.Navy) { QueueSheet() }
-    if (showMixer && t != null) ModalBottomSheet(onDismissRequest = { showMixer = false }, containerColor = Brand.Navy) { MixerSheet(t, mixable) }
+    if (showQueue) ModalBottomSheet(onDismissRequest = { showQueue = false }, containerColor = Brand.Sheet) { QueueSheet() }
+    if (showMixer && t != null) ModalBottomSheet(onDismissRequest = { showMixer = false }, containerColor = Brand.Sheet) { MixerSheet(t, mixable) }
+}
+
+/** The handle at the top: tap it, or pull it down, to close. */
+@Composable
+private fun Grabber(onClose: () -> Unit, pulled: (Float) -> Unit, let: (Float) -> Unit) {
+    val tracker = remember { VelocityTracker() }
+    Box(
+        Modifier.fillMaxWidth().height(34.dp).clickable(onClick = onClose).pointerInput(Unit) {
+            detectVerticalDragGestures(
+                onDragStart = { tracker.resetTracking() },
+                onVerticalDrag = { ch, dy -> tracker.addPosition(ch.uptimeMillis, ch.position); pulled(dy); ch.consume() },
+                onDragEnd = { let(tracker.calculateVelocity().y) },
+                onDragCancel = { let(0f) },
+            )
+        },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(Modifier.width(40.dp).height(5.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.4f)))
+    }
+}
+
+@Composable
+private fun SongTitle(t: Track?, modifier: Modifier, small: Boolean) {
+    Column(modifier) {
+        Text(
+            t?.title ?: "Nothing playing", color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            style = if (small) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
+        )
+        Text(t?.byline().orEmpty(), color = Color.White.copy(alpha = 0.6f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = if (small) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge)
+    }
+}
+
+/** ⋯ beside the song: share it, send it to a phone, the Mixer. */
+@Composable
+private fun More(t: Track, onShare: () -> Unit, onMixer: () -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }) {
+            Box(Modifier.size(30.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.MoreHoriz, "More", tint = Color.White, modifier = Modifier.size(20.dp))
+            }
+        }
+        DropdownMenu(open, onDismissRequest = { open = false }, containerColor = Brand.Card) {
+            DropdownMenuItem(text = { Text("Share to a story…") }, leadingIcon = { Icon(Icons.Rounded.IosShare, null) }, onClick = { open = false; onShare() })
+            val lib = App.instance.library
+            if (t.file != null || lib.best(t).file != null) DropdownMenuItem(
+                text = { Text("Send to a phone…") }, leadingIcon = { Icon(Icons.Rounded.QrCode2, null) },
+                onClick = { open = false; App.instance.shareOpen.value = App.ShareAsk(listOf(lib.best(t))) },
+            )
+            DropdownMenuItem(text = { Text("Mixer") }, leadingIcon = { Icon(Icons.Rounded.Tune, null) }, onClick = { open = false; onMixer() })
+        }
+    }
+}
+
+/**
+ * The cover, with the songs either side of it a swipe away: it follows your
+ * finger, and let go past a third (or flicked) it slides on to that song. At
+ * either end it only gives a little. Pulled down instead, Now Playing closes.
+ */
+@Composable
+private fun SwipeCover(t: Track?, around: Pair<Track?, Track?>, playing: Boolean, pulled: (Float) -> Unit, let: (Float) -> Unit) {
+    val hub = App.instance.player
+    val scope = rememberCoroutineScope()
+    val offset = remember { Animatable(0f) }
+    val scale by animateFloatAsState(if (playing || t == null) 1f else 0.8f, spring(dampingRatio = 0.6f, stiffness = 300f), label = "cover")
+    val (prev, next) = around
+    // the new song is in the middle now: no slide left over
+    LaunchedEffect(t?.key) { offset.snapTo(0f) }
+    BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(1f)) {
+        val w = constraints.maxWidth.toFloat()
+        val gap = w * 1.12f
+        val shape = RoundedCornerShape(14.dp)
+        val gesture = Modifier.pointerInput(prev?.key, next?.key, t?.key) {
+            val tracker = VelocityTracker()
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                tracker.resetTracking()
+                var axis = 0 // 1: across (songs), 2: down (close)
+                var moved = Offset.Zero
+                while (true) {
+                    val event = awaitPointerEvent()
+                    val ch = event.changes.firstOrNull { it.id == down.id } ?: break
+                    if (!ch.pressed) break
+                    val d = ch.positionChange()
+                    moved += d
+                    tracker.addPosition(ch.uptimeMillis, ch.position)
+                    if (axis == 0 && moved.getDistance() > viewConfiguration.touchSlop) axis = if (abs(moved.x) >= abs(moved.y)) 1 else 2
+                    when (axis) {
+                        1 -> {
+                            val blocked = (offset.value + d.x > 0 && prev == null) || (offset.value + d.x < 0 && next == null)
+                            scope.launch { offset.snapTo(offset.value + if (blocked) d.x * 0.3f else d.x) }
+                            ch.consume()
+                        }
+                        2 -> { pulled(d.y); ch.consume() }
+                    }
+                }
+                val v = tracker.calculateVelocity()
+                when (axis) {
+                    1 -> {
+                        val go = when {
+                            next != null && (offset.value < -w * 0.33f || v.x < -1500f) -> -1
+                            prev != null && (offset.value > w * 0.33f || v.x > 1500f) -> 1
+                            else -> 0
+                        }
+                        scope.launch {
+                            if (go == 0) {
+                                offset.animateTo(0f, spring(dampingRatio = 0.75f, stiffness = 400f))
+                            } else {
+                                val was = t?.key
+                                offset.animateTo(go * gap, tween(230, easing = FastOutSlowInEasing))
+                                if (go < 0) hub.next() else hub.previousSong()
+                                delay(1500)
+                                if (hub.current.value?.key == was) offset.animateTo(0f) // it didn't change: back
+                            }
+                        }
+                    }
+                    2 -> let(v.y)
+                }
+            }
+        }
+        Box(Modifier.fillMaxSize().then(gesture)) {
+            prev?.let { Cover(it.art, shape, Modifier.graphicsLayer { translationX = offset.value - gap; scaleX = 0.8f; scaleY = 0.8f }) }
+            next?.let { Cover(it.art, shape, Modifier.graphicsLayer { translationX = offset.value + gap; scaleX = 0.8f; scaleY = 0.8f }) }
+            Cover(t?.art, shape, Modifier.graphicsLayer { translationX = offset.value; scaleX = scale; scaleY = scale })
+        }
+    }
+}
+
+@Composable
+private fun Cover(art: String?, shape: RoundedCornerShape, modifier: Modifier) {
+    Box(modifier.fillMaxSize().shadow(28.dp, shape, ambientColor = Color.Black, spotColor = Color.Black).clip(shape).background(Brand.Card), contentAlignment = Alignment.Center) {
+        Icon(Icons.Rounded.MusicNote, null, tint = Brand.Dim.copy(alpha = 0.5f), modifier = Modifier.size(96.dp))
+        if (!art.isNullOrEmpty()) AsyncImage(art, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+    }
+}
+
+/** A thin white bar (thicker while you drag it), the time gone and left, and the quality in the middle. */
+@Composable
+private fun Scrubber(position: Long, duration: Long, t: Track?, onSeek: (Float) -> Unit) {
+    var drag by remember { mutableStateOf<Float?>(null) }
+    val fraction = drag ?: if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f
+    val thick by animateDpAsState(if (drag != null) 12.dp else 7.dp, label = "bar")
+    Column(Modifier.padding(top = 14.dp)) {
+        Box(
+            Modifier.fillMaxWidth().height(28.dp)
+                .pointerInput(duration) { detectTapGestures { onSeek((it.x / size.width).coerceIn(0f, 1f)) } }
+                .pointerInput(duration) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { drag = (it.x / size.width).coerceIn(0f, 1f) },
+                        onHorizontalDrag = { ch, _ -> drag = (ch.position.x / size.width).coerceIn(0f, 1f); ch.consume() },
+                        onDragEnd = { drag?.let(onSeek); drag = null },
+                        onDragCancel = { drag = null },
+                    )
+                },
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Box(Modifier.fillMaxWidth().height(thick).clip(CircleShape).background(Color.White.copy(alpha = 0.2f)))
+            Box(Modifier.fillMaxWidth(fraction).height(thick).clip(CircleShape).background(Color.White.copy(alpha = if (drag != null) 1f else 0.7f)))
+        }
+        val at = if (duration > 0) (fraction * duration).toLong() else position
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(clock(at / 1000), color = Color.White.copy(alpha = 0.6f), style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
+            if (t != null) Quality(t)
+            Text("-" + clock(((duration - at).coerceAtLeast(0)) / 1000), color = Color.White.copy(alpha = 0.6f), style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
+        }
+    }
+}
+
+/** A button in the bottom row: lit (white, round) while it's on. */
+@Composable
+private fun RoundToggle(on: Boolean, label: String, onClick: () -> Unit, icon: @Composable (Boolean) -> Unit) {
+    IconButton(onClick = onClick, modifier = Modifier.size(52.dp)) {
+        Box(Modifier.size(40.dp).clip(CircleShape).background(if (on) Color.White else Color.Transparent).semantics { contentDescription = label }, contentAlignment = Alignment.Center) {
+            icon(on)
+        }
+    }
+}
+
+/** Lyrics: a speech bubble with quote marks in it (as Apple Music's), not a mic. */
+@Composable
+private fun LyricsIcon(on: Boolean) {
+    Box(contentAlignment = Alignment.Center) {
+        Icon(if (on) Icons.Rounded.ChatBubble else Icons.Rounded.ChatBubbleOutline, null, tint = if (on) Color.Black else Color.White.copy(alpha = 0.85f), modifier = Modifier.size(26.dp))
+        Icon(Icons.Rounded.FormatQuote, null, tint = if (on) Color.White else Color.White.copy(alpha = 0.85f), modifier = Modifier.size(15.dp).offset(y = (-1.5).dp))
+    }
 }
 
 /** Each part as loud as you like (a split song); the song stays as loud as it was whole. And the effects, on every song. */
@@ -413,19 +635,20 @@ private fun TimedLyrics(lines: List<Line>, positionMs: Long, onShareLine: (Strin
     val at = positionMs / 1000.0 + 0.3 // a line shows just before it's sung
     val now = lines.indexOfLast { it.start <= at }.coerceAtLeast(0)
     val state = rememberLazyListState()
-    LaunchedEffect(now) { state.animateScrollToItem((now - 2).coerceAtLeast(0)) }
-    LazyColumn(state = state, contentPadding = PaddingValues(vertical = 120.dp), modifier = Modifier.fillMaxSize()) {
+    LaunchedEffect(now) { state.animateScrollToItem((now - 1).coerceAtLeast(0)) }
+    LazyColumn(state = state, contentPadding = PaddingValues(top = 40.dp, bottom = 240.dp), modifier = Modifier.fillMaxSize()) {
         itemsIndexed(lines) { i, line ->
             val sung = i == now
-            val size by animateFloatAsState(if (sung) 34f else 21f, tween(350), label = "size")
-            val alpha by animateFloatAsState(if (sung) 1f else 0.4f, tween(350), label = "alpha")
+            val alpha by animateFloatAsState(if (sung) 1f else if (i < now) 0.28f else 0.38f, tween(400), label = "alpha")
+            val grow by animateFloatAsState(if (sung) 1f else 0.94f, tween(400), label = "grow")
             Text(
                 line.text,
                 color = Color.White.copy(alpha = alpha),
-                fontSize = size.sp,
-                lineHeight = (size * 1.25f).sp,
+                fontSize = 30.sp,
+                lineHeight = 38.sp,
                 fontWeight = FontWeight.ExtraBold,
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).combinedClickable(onClick = { hub.seek((line.start * 1000).toLong()) }, onLongClick = { onShareLine(line.text) }).padding(vertical = 8.dp),
+                modifier = Modifier.fillMaxWidth().graphicsLayer { scaleX = grow; scaleY = grow; transformOrigin = TransformOrigin(0f, 0.5f) }
+                    .clip(RoundedCornerShape(12.dp)).combinedClickable(onClick = { hub.seek((line.start * 1000).toLong()) }, onLongClick = { onShareLine(line.text) }).padding(vertical = 10.dp),
             )
         }
     }
@@ -436,9 +659,21 @@ private fun QueueSheet() {
     val hub = App.instance.player
     val queue by hub.queue.collectAsState()
     val index by hub.index.collectAsState()
+    val shuffle by hub.shuffle.collectAsState()
+    val repeat by hub.repeat.collectAsState()
     Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
-        SectionTitle("Queue")
-        Note("${(queue.size - index - 1).coerceAtLeast(0)} songs next")
+        Row(Modifier.padding(end = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                SectionTitle("Playing next")
+                Text("${(queue.size - index - 1).coerceAtLeast(0)} songs", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 20.dp))
+            }
+            QueueToggle(shuffle, "Shuffle", { hub.toggleShuffle() }) { Icon(Icons.Rounded.Shuffle, null, tint = it) }
+            Spacer(Modifier.width(8.dp))
+            QueueToggle(repeat != Player.REPEAT_MODE_OFF, "Repeat", { hub.cycleRepeat() }) {
+                Icon(if (repeat == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat, null, tint = it)
+            }
+        }
+        Gap(8.dp)
         LazyColumn(contentPadding = PaddingValues(horizontal = 8.dp)) {
             itemsIndexed(queue) { i, t ->
                 TrackRow(t, onPlay = { hub.playAt(i) }, highlight = i == index, trailing = {
@@ -453,23 +688,60 @@ private fun QueueSheet() {
     }
 }
 
-/** Above the tabs: the song playing; tap it for Now Playing. */
+/** Shuffle or Repeat in the queue's header: a rounded square, lit while on. */
+@Composable
+private fun QueueToggle(on: Boolean, label: String, onClick: () -> Unit, icon: @Composable (Color) -> Unit) {
+    Box(
+        Modifier.size(44.dp, 34.dp).clip(RoundedCornerShape(10.dp)).background(if (on) Color.White else Color.White.copy(alpha = 0.12f)).clickable(onClick = onClick).semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) { icon(if (on) Color.Black else Color.White) }
+}
+
+/** Above the tabs: the song playing; tap it for Now Playing, swipe it for the next or previous song. */
 @Composable
 fun MiniPlayer(onOpen: () -> Unit) {
     val hub = App.instance.player
     val current by hub.current.collectAsState()
     val playing by hub.playing.collectAsState()
+    val around by hub.around.collectAsState()
     val t = current ?: return
     val (position, duration) = rememberPosition()
+    val scope = rememberCoroutineScope()
+    val slide = remember { Animatable(0f) }
     Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp).clip(RoundedCornerShape(16.dp)).background(Brand.Card).clickable(onClick = onOpen)) {
-        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.padding(8.dp).pointerInput(t.key, around.first?.key, around.second?.key) {
+                val w = size.width.toFloat()
+                detectHorizontalDragGestures(
+                    onHorizontalDrag = { ch, dx -> scope.launch { slide.snapTo(slide.value + dx) }; ch.consume() },
+                    onDragEnd = {
+                        scope.launch {
+                            val go = when {
+                                slide.value < -w * 0.25f && around.second != null -> -1
+                                slide.value > w * 0.25f && around.first != null -> 1
+                                else -> 0
+                            }
+                            if (go == 0) { slide.animateTo(0f, spring(dampingRatio = 0.8f)); return@launch }
+                            val was = t.key
+                            slide.animateTo(go * w, tween(160))
+                            if (go < 0) hub.next() else hub.previousSong()
+                            withTimeoutOrNull(1500) { hub.current.first { it?.key != was } }
+                            slide.snapTo(-go * w) // the new song comes in from the other side
+                            slide.animateTo(0f, tween(220, easing = FastOutSlowInEasing))
+                        }
+                    },
+                    onDragCancel = { scope.launch { slide.animateTo(0f) } },
+                )
+            }.graphicsLayer { translationX = slide.value; alpha = 1f - (abs(slide.value) / size.width.coerceAtLeast(1f)).coerceIn(0f, 1f) * 0.7f },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Artwork(t.art, 44.dp, corner = 10.dp)
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 Text(t.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(t.artist, style = MaterialTheme.typography.bodyMedium, color = Brand.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             IconButton(onClick = { hub.toggle() }) { Icon(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (playing) "Pause" else "Play", tint = Color.White) }
-            IconButton(onClick = { hub.next() }) { Icon(Icons.Rounded.SkipNext, "Next", tint = Color.White) }
+            IconButton(onClick = { hub.next() }) { Icon(Icons.Rounded.FastForward, "Next", tint = Color.White) }
         }
         LinearProgressIndicator(
             progress = { if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f },

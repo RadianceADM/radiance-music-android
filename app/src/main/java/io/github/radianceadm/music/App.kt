@@ -48,6 +48,7 @@ class App : Application() {
         instance = this
         NewPipe.init(NewPipeDownloader(), Localization("en", "US"))
         Effects.load(this)
+        io.github.radianceadm.music.ui.Looks.load(this) // True Black or Stone
         library = Library(this)
         player = PlayerHub(this)
         mixer = Mixer(this)
@@ -55,6 +56,7 @@ class App : Application() {
         share = Session(this)
         scope.launch { saveMissing() }
         scope.launch { Splitter.forgetDownloaded(this@App) } // the model comes with the app now
+        io.github.radianceadm.music.update.Updates.atStart(this) // a newer version out? (over the air)
     }
 
     /** Like it, save it: liked now, saved in the background (one song at a time). */
@@ -92,7 +94,8 @@ class App : Application() {
         for (t in library.liked.value.filter { it.file == null }) saveOne(t)
     }
 
-    data class ShareAsk(val songs: List<Track>?)
+    /** Songs to share (null: Liked Songs); [scan]: straight to reading another's QR. */
+    data class ShareAsk(val songs: List<Track>?, val scan: Boolean = false)
 
     companion object {
         lateinit var instance: App
