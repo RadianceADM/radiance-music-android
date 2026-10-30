@@ -1,5 +1,11 @@
 package io.github.radianceadm.music.ui
 
+import androidx.compose.material.icons.rounded.AutoFixOff
+import androidx.compose.material.icons.automirrored.rounded.CallSplit
+import androidx.compose.material.icons.rounded.StopCircle
+import androidx.compose.material.icons.rounded.RestartAlt
+import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.MicOff
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -494,9 +500,9 @@ private fun PartSliders(gains: Map<String, Float>) {
         }
         Gap(8.dp)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilledTonalButton(onClick = { mixer.preset(vocals = 0f, rest = 1f) }) { Text("No vocals") }
-            FilledTonalButton(onClick = { mixer.preset(vocals = 1f, rest = 0f) }) { Text("Vocals only") }
-            FilledTonalButton(onClick = { mixer.preset(vocals = 1f, rest = 1f) }) { Text("Reset") }
+            FilledTonalButton(onClick = { mixer.preset(vocals = 0f, rest = 1f) }) { Labeled(Icons.Rounded.MicOff, "No vocals") }
+            FilledTonalButton(onClick = { mixer.preset(vocals = 1f, rest = 0f) }) { Labeled(Icons.Rounded.Mic, "Vocals only") }
+            FilledTonalButton(onClick = { mixer.preset(vocals = 1f, rest = 1f) }) { Labeled(Icons.Rounded.RestartAlt, "Reset") }
         }
     }
 }
@@ -524,13 +530,13 @@ private fun SplitPanel(t: Track) {
                 Gap(8.dp)
                 Text("It goes on with the screen off. The Mixer's parts appear here when it's done.", color = Brand.Dim, style = MaterialTheme.typography.labelSmall)
                 Gap(8.dp)
-                FilledTonalButton(onClick = { splits.remove(t.key) }) { Text("Stop splitting") }
+                FilledTonalButton(onClick = { splits.remove(t.key) }) { Labeled(Icons.Rounded.StopCircle, "Stop splitting") }
             }
             place >= 0 -> {
                 Text("Waiting to be split", color = Color.White, style = MaterialTheme.typography.titleMedium)
                 Text(when (place) { 0 -> "Starting in a moment."; 1 -> "Next, after the song being split now."; else -> "$place songs before it." }, color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
                 Gap(8.dp)
-                FilledTonalButton(onClick = { splits.remove(t.key) }) { Text("Don't split it") }
+                FilledTonalButton(onClick = { splits.remove(t.key) }) { Labeled(Icons.Rounded.Close, "Don't split it") }
             }
             else -> {
                 Text("Split this song into drums, bass, other and vocals, here on this phone, to mix them.", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
@@ -540,7 +546,7 @@ private fun SplitPanel(t: Track) {
                     if (!app.library.isLiked(t.key)) app.like(t)
                     val granted = Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
                     if (granted) splits.add(t) else askNotes.launch(Manifest.permission.POST_NOTIFICATIONS)
-                }, colors = ButtonDefaults.buttonColors(containerColor = Brand.Orange)) { Text("Split this song") }
+                }, colors = ButtonDefaults.buttonColors(containerColor = Brand.Orange)) { Labeled(Icons.AutoMirrored.Rounded.CallSplit, "Split this song") }
             }
         }
         problem?.let { Gap(6.dp); Text(it, color = Brand.Orange, style = MaterialTheme.typography.labelSmall) }
@@ -607,7 +613,7 @@ private fun EffectSliders() {
             low = 0f; high = 0f; reverb = 0f
             Effects.lowCut = Effects.LOW_OFF; Effects.highCut = Effects.HIGH_OFF; Effects.reverb = 0.0
             Effects.save(context)
-        }) { Text("Effects off") }
+        }) { Labeled(Icons.Rounded.AutoFixOff, "Effects off") }
     }
 }
 

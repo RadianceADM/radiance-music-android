@@ -35,7 +35,8 @@ object StoryCard {
     const val W = 1080
     const val H = 1920
     /** Lines of lyrics a card holds at most (a quote, as Spotify's cards). */
-    const val MOST_LINES = 5
+    /** As Spotify's: this many characters of lyrics at most, on lines next to each other. */
+    const val MOST_CHARS = 150
 
     /** Instagram's and Facebook's bars cover the top and the bottom of a story: everything stays between. */
     private const val SAFE_TOP = 250

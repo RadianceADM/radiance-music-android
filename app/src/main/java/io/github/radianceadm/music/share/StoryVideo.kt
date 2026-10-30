@@ -71,11 +71,13 @@ object StoryVideo {
     /** The frames: before the first line, then each line lit in turn (or one picture all along). */
     fun frames(clip: Clip, picture: (lit: Int?) -> Bitmap): List<Frame> {
         if (clip.lineAtMs.isEmpty()) return listOf(Frame(picture(null), clip.lengthMs))
+        // lines past the clip's end (it's at most MOST_MS long) don't get a frame of their own
         val out = mutableListOf<Frame>()
         val first = clip.lineAtMs.first().coerceAtLeast(0)
         if (first > 80) out += Frame(picture(-1), first)
-        clip.lineAtMs.forEachIndexed { i, at ->
-            val until = clip.lineAtMs.getOrNull(i + 1) ?: clip.lengthMs
+        val shown = clip.lineAtMs.takeWhile { it < clip.lengthMs - 200 }.ifEmpty { clip.lineAtMs.take(1) }
+        shown.forEachIndexed { i, at ->
+            val until = (shown.getOrNull(i + 1) ?: clip.lengthMs).coerceAtMost(clip.lengthMs)
             val ms = (until - at.coerceAtLeast(0)).coerceAtLeast(120)
             out += Frame(picture(i), ms)
         }

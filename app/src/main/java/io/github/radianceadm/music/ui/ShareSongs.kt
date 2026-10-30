@@ -1,5 +1,11 @@
 package io.github.radianceadm.music.ui
 
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.rounded.StopCircle
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -111,7 +117,7 @@ private fun Start(songs: List<Track>?, scan: Boolean) {
         Title("Scan a QR", "From Radiance Music on another phone or the computer (Share songs there).")
         QrScanner(onFound = { scanning = false; share.scanned(it) }, modifier = Modifier.fillMaxWidth())
         Gap(12.dp)
-        FilledTonalButton(onClick = { scanning = false }) { Text("Back") }
+        FilledTonalButton(onClick = { scanning = false }) { Labeled(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
         return
     }
     Title("Share songs", "Straight to another phone or the computer, with their parts: nothing to download or split there. What it has already isn't sent again.")
@@ -126,12 +132,12 @@ private fun Start(songs: List<Track>?, scan: Boolean) {
         },
         enabled = all.isNotEmpty(),
         colors = ButtonDefaults.buttonColors(containerColor = Brand.Orange),
-    ) { Text("Show the QR") }
+    ) { Labeled(Icons.Rounded.QrCode2, "Show the QR") }
     if (all.isEmpty()) Text("Only saved songs can be sent; like a song to save it.", color = Brand.Dim, style = MaterialTheme.typography.labelSmall)
     Gap(22.dp)
     Choice(Icons.Rounded.QrCodeScanner, "Get songs", "Scan the QR on the other phone or the computer.") { scanning = true }
     Gap(6.dp)
-    FilledTonalButton(onClick = { scanning = true }) { Text("Scan a QR") }
+    FilledTonalButton(onClick = { scanning = true }) { Labeled(Icons.Rounded.QrCodeScanner, "Scan a QR") }
 }
 
 private fun describe(songs: List<Track>?, n: Int) = when {
@@ -171,7 +177,7 @@ private fun Waiting(what: String, onCancel: () -> Unit) {
         Text(what, color = Color.White, style = MaterialTheme.typography.titleMedium)
     }
     Gap(16.dp)
-    FilledTonalButton(onClick = onCancel) { Text("Cancel") }
+    FilledTonalButton(onClick = onCancel) { Labeled(Icons.Rounded.Close, "Cancel") }
 }
 
 @Composable
@@ -187,7 +193,7 @@ private fun Showing(s: Session.State.Showing, onStop: () -> Unit) {
         Text("Sending: ${ShareService.describe(p)}", color = Color.White, style = MaterialTheme.typography.bodyMedium)
     }
     Gap(14.dp)
-    FilledTonalButton(onClick = onStop) { Text("Stop sharing") }
+    FilledTonalButton(onClick = onStop) { Labeled(Icons.Rounded.StopCircle, "Stop sharing") }
 }
 
 @Composable
@@ -200,8 +206,8 @@ private fun Choose(s: Session.State.Choose) {
     Toggle("With music videos", "Bigger: each about 30 to 60 MB", videos) { videos = it }
     Gap(8.dp)
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Button(onClick = { app.share.sendTo(s.ticket, all, videos) }, enabled = all.isNotEmpty(), colors = ButtonDefaults.buttonColors(containerColor = Brand.Orange)) { Text("Send") }
-        FilledTonalButton(onClick = { app.share.close() }) { Text("Cancel") }
+        Button(onClick = { app.share.sendTo(s.ticket, all, videos) }, enabled = all.isNotEmpty(), colors = ButtonDefaults.buttonColors(containerColor = Brand.Orange)) { Labeled(Icons.AutoMirrored.Rounded.Send, "Send") }
+        FilledTonalButton(onClick = { app.share.close() }) { Labeled(Icons.Rounded.Close, "Cancel") }
     }
 }
 
@@ -216,13 +222,13 @@ private fun Moving(s: Session.State.Moving, onCancel: () -> Unit) {
     Gap(8.dp)
     Text("It goes on with the screen off. Keep the two close together.", color = Brand.Dim, style = MaterialTheme.typography.labelSmall)
     Gap(14.dp)
-    FilledTonalButton(onClick = onCancel) { Text("Stop") }
+    FilledTonalButton(onClick = onCancel) { Labeled(Icons.Rounded.StopCircle, "Stop") }
 }
 
 @Composable
 private fun Finished(message: String, failed: Boolean, onOk: () -> Unit) {
     Title(if (failed) "Couldn't share" else "Done", message)
     Row(Modifier.clip(RoundedCornerShape(50)).background(Color.Transparent)) {
-        Button(onClick = onOk, colors = ButtonDefaults.buttonColors(containerColor = Brand.Orange)) { Text(if (failed) "Try again" else "OK") }
+        Button(onClick = onOk, colors = ButtonDefaults.buttonColors(containerColor = Brand.Orange)) { Labeled(if (failed) Icons.Rounded.Refresh else Icons.Rounded.Check, if (failed) "Try again" else "OK") }
     }
 }

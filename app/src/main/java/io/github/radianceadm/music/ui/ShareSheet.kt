@@ -3,6 +3,7 @@ package io.github.radianceadm.music.ui
 import android.graphics.Bitmap
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -31,12 +32,14 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.FormatQuote
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.MusicNote
-import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material.icons.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
@@ -44,10 +47,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -86,7 +87,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** A lyric line to pick: its words, and when it's sung (seconds; null for lyrics without timing). */
-private data class Pick(val text: String, val start: Double?)
+internal data class Pick(val text: String, val start: Double?)
 
 /**
  * Share a song to a story, as Spotify's share screen (owner, 2026-10-31: "gandahan
@@ -213,16 +214,16 @@ internal fun ShareScreen(t: Track, startLines: List<String>, onClose: () -> Unit
                             CircularProgressIndicator(progress = { making ?: 0f }, color = Color.White, trackColor = Color.White.copy(alpha = 0.2f), modifier = Modifier.size(44.dp))
                             Spacer(Modifier.height(12.dp))
                             Text("Making the video… ${((making ?: 0f) * 100).toInt()} %", color = Color.White, style = MaterialTheme.typography.bodyMedium)
-                            TextButton(onClick = { job?.cancel(); making = null }) { Text("Cancel", color = Color.White) }
+                            TextButton(onClick = { job?.cancel(); making = null }) { Labeled(Icons.Rounded.Close, "Cancel", Color.White) }
                         }
                     }
                 }
             }
             // Cover or Lyrics, and the sound
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                Chip("Cover", !lyricsStyle) { lyricsStyle = false }
+                Chip("Cover", !lyricsStyle, icon = { on -> Icon(Icons.Rounded.Image, null, tint = if (on) Color.Black else Color.White, modifier = Modifier.size(16.dp)) }) { lyricsStyle = false }
                 Spacer(Modifier.width(8.dp))
-                Chip(if (lyricsStyle && picked.isNotEmpty()) "Lyrics · ${picked.size}" else "Lyrics", lyricsStyle) {
+                Chip("Lyrics", lyricsStyle, icon = { on -> Icon(if (on && picked.isNotEmpty()) Icons.Rounded.Edit else Icons.Rounded.FormatQuote, null, tint = if (on) Color.Black else Color.White, modifier = Modifier.size(16.dp)) }) {
                     if (lyricsStyle || picked.isEmpty()) choosing = true
                     lyricsStyle = true
                 }
@@ -249,43 +250,103 @@ internal fun ShareScreen(t: Track, startLines: List<String>, onClose: () -> Unit
     }
 
     if (choosing) {
-        ModalBottomSheet(onDismissRequest = { choosing = false; if (picked.isEmpty()) lyricsStyle = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = Brand.Sheet) {
-            Column(Modifier.fillMaxWidth().padding(bottom = 20.dp)) {
-                Row(Modifier.fillMaxWidth().padding(start = 22.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Pick the lines", color = Color.White, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        Text(if (sound && song != null) "Up to ${StoryCard.MOST_LINES}. The video plays them, lit as they're sung." else "Up to ${StoryCard.MOST_LINES}.", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
-                    }
-                    TextButton(onClick = { choosing = false; if (picked.isEmpty()) lyricsStyle = false }) { Text("Done", color = Brand.Orange, fontWeight = FontWeight.Bold) }
+        BackHandler { choosing = false; if (picked.isEmpty()) lyricsStyle = false }
+        LyricPicker(
+            lines = lines,
+            picked = picked,
+            tone = base,
+            withSound = sound && song != null,
+            onDone = { choosing = false; if (picked.isEmpty()) lyricsStyle = false },
+        )
+    }
+}
+
+/**
+ * Picking the lines, as Spotify's (owner, 2026-10-31: "Spotify has 149 chars, and
+ * lyrics shouldn't have the circle select box"): the lyrics big on the story's
+ * colour; tap a line and it lights up. Lines next to each other, up to
+ * [StoryCard.MOST_CHARS] characters; a line away from them starts again from it.
+ */
+@Composable
+internal fun LyricPicker(lines: List<Pick>?, picked: MutableList<Int>, tone: Color, withSound: Boolean, onDone: () -> Unit) {
+    val context = App.instance
+    val used = picked.sumOf { lines?.getOrNull(it)?.text?.length ?: 0 }
+    Box(Modifier.fillMaxSize().background(tone).background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.15f), Color.Black.copy(alpha = 0.55f))))) {
+        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { picked.clear(); onDone() }) { Icon(Icons.Rounded.Close, "Close", tint = Color.White) }
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Choose lyrics", color = Color.White, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        "$used/${StoryCard.MOST_CHARS}",
+                        color = if (used >= StoryCard.MOST_CHARS - 10) Brand.Glow else Color.White.copy(alpha = 0.7f),
+                        style = MaterialTheme.typography.labelMedium,
+                    )
                 }
-                val l = lines
-                when {
-                    l == null -> Note("Looking for lyrics…")
-                    l.isEmpty() -> Note("No lyrics for this song: its story has the cover.")
-                    else -> LazyColumn(Modifier.fillMaxWidth().heightIn(max = 460.dp).padding(top = 8.dp)) {
-                        itemsIndexed(l) { i, line ->
-                            val on = i in picked
-                            Row(
-                                Modifier.fillMaxWidth().clickable {
-                                    if (on) picked.remove(i)
-                                    else if (picked.size < StoryCard.MOST_LINES) picked.add(i)
-                                    else Toast.makeText(context, "${StoryCard.MOST_LINES} lines at most", Toast.LENGTH_SHORT).show()
-                                }.padding(horizontal = 22.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    line.text, color = if (on) Color.White else Color.White.copy(alpha = 0.55f), fontSize = 20.sp, lineHeight = 26.sp,
-                                    fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f),
-                                )
-                                Spacer(Modifier.width(10.dp))
-                                Icon(if (on) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked, null, tint = if (on) Brand.Orange else Brand.Dim, modifier = Modifier.size(22.dp))
-                            }
-                        }
+                Row(
+                    Modifier.padding(end = 8.dp).clip(RoundedCornerShape(50)).background(if (picked.isEmpty()) Color.White.copy(alpha = 0.25f) else Color.White)
+                        .clickable(enabled = picked.isNotEmpty(), onClick = onDone).padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Rounded.Check, null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Done", color = Color.Black, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                }
+            }
+            Text(
+                if (withSound) "Tap the lines to share. The video plays them with the song, each lit as it's sung." else "Tap the lines to share.",
+                color = Color.White.copy(alpha = 0.75f), style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 6.dp),
+            )
+            when {
+                lines == null -> Note("Looking for lyrics…")
+                lines.isEmpty() -> Note("No lyrics for this song: its story has the cover.")
+                else -> LazyColumn(Modifier.fillMaxWidth().weight(1f), contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 40.dp)) {
+                    itemsIndexed(lines) { i, line ->
+                        val on = i in picked
+                        // picked lines share one highlight: round only where it starts and ends
+                        val top = if (on && (i - 1) in picked) 0.dp else 14.dp
+                        val bottom = if (on && (i + 1) in picked) 0.dp else 14.dp
+                        Text(
+                            line.text,
+                            color = if (on) Color.White else Color.White.copy(alpha = 0.45f),
+                            fontSize = 24.sp, lineHeight = 31.sp, fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart = top, topEnd = top, bottomStart = bottom, bottomEnd = bottom))
+                                .background(if (on) Color.White.copy(alpha = 0.14f) else Color.Transparent)
+                                .clickable {
+                                    val msg = pick(picked, i, lines.map { it.text.length })
+                                    if (msg != null) Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                }
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                        )
                     }
                 }
             }
         }
     }
+}
+
+/**
+ * A tap on line [i]: an end of the picked lines comes off; the line just before or
+ * after joins them (if the characters allow); any other line starts again from it.
+ * What to say when it can't, else null.
+ */
+internal fun pick(picked: MutableList<Int>, i: Int, lengths: List<Int>): String? {
+    val most = StoryCard.MOST_CHARS
+    val sorted = picked.sorted()
+    when {
+        i in picked && (i == sorted.first() || i == sorted.last()) -> picked.remove(i)
+        i in picked -> { picked.clear(); picked.add(i) } // from the middle: just this one
+        picked.isEmpty() || i == sorted.first() - 1 || i == sorted.last() + 1 -> {
+            if (picked.sumOf { lengths[it] } + lengths[i] > most) return if (picked.isEmpty()) "That line is longer than $most characters" else "$most characters at most"
+            picked.add(i)
+        }
+        else -> {
+            if (lengths[i] > most) return "That line is longer than $most characters"
+            picked.clear(); picked.add(i)
+        }
+    }
+    return null
 }
 
 @Composable

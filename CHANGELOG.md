@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.11
+
+- **Choosing lyrics, as Spotify's:** the lyrics big on the story's colour; tap a line and it
+  lights up (no circles to tick). Lines next to each other, up to 150 characters, counted at
+  the top; tapping a line away from them starts again from it, and tapping an end takes it off.
+- **Every button has its icon:** Play your mix, Liked A to Z, Split this song, No vocals,
+  Vocals only, Reset, Effects off, Update now, Show the QR, Scan a QR, Send, and the rest.
+
 ## 0.5.10
 
 - **Share, as Spotify's:** a screen of its own with the story big. Cover or Lyrics (pick up to

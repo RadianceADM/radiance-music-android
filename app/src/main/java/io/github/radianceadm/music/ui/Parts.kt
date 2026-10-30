@@ -131,3 +131,11 @@ fun Note(text: String) {
 
 @Composable
 fun Gap(h: Dp) = Spacer(Modifier.size(h))
+
+/** A button's inside: its icon, then its words (owner, 2026-10-31: every button carries an icon). */
+@Composable
+fun Labeled(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, color: Color = Color.Unspecified) {
+    androidx.compose.material3.Icon(icon, null, tint = if (color == Color.Unspecified) androidx.compose.material3.LocalContentColor.current else color, modifier = Modifier.size(18.dp))
+    Spacer(Modifier.size(8.dp))
+    Text(text, color = color)
+}

@@ -1,5 +1,12 @@
 package io.github.radianceadm.music.ui
 
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.SystemUpdate
+import androidx.compose.material.icons.rounded.Refresh
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -158,7 +165,7 @@ fun UpdatePanel() {
             is Updates.State.UpToDate -> {
                 Text("You have the newest version", color = Color.White, style = MaterialTheme.typography.titleMedium)
                 Text("Radiance Music ${s.version}. It looks for updates by itself, too.", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
-                TextButton(onClick = { Updates.check(context) }, contentPadding = ButtonDefaults.TextButtonContentPadding) { Text("Look again", color = Brand.Orange) }
+                TextButton(onClick = { Updates.check(context) }, contentPadding = ButtonDefaults.TextButtonContentPadding) { Labeled(Icons.Rounded.Refresh, "Look again", Brand.Orange) }
             }
             is Updates.State.Available -> {
                 Text("Radiance Music ${s.release.version} is out", color = Color.White, style = MaterialTheme.typography.titleMedium)
@@ -166,7 +173,7 @@ fun UpdatePanel() {
                 Notes(s.release.notes)
                 Spacer(Modifier.height(12.dp))
                 Button(onClick = { Updates.update(context, s.release) }, colors = ButtonDefaults.buttonColors(containerColor = Brand.Orange)) {
-                    Text("Update now (${mb(s.release.size)})")
+                    Labeled(Icons.Rounded.SystemUpdate, "Update now (${mb(s.release.size)})")
                 }
                 if (Updates.metered(context)) Text("You're on mobile data: Wi-Fi may be cheaper for this.", color = Brand.Dim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 6.dp))
             }
@@ -175,25 +182,25 @@ fun UpdatePanel() {
                 Text("${mb((s.release.size * s.done).toLong())} of ${mb(s.release.size)}. Keep the app open; music goes on playing.", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(10.dp))
                 LinearProgressIndicator(progress = { s.done }, modifier = Modifier.fillMaxWidth(), color = Brand.Orange, trackColor = Brand.Line)
-                TextButton(onClick = { Updates.cancel() }, contentPadding = ButtonDefaults.TextButtonContentPadding) { Text("Cancel", color = Brand.Orange) }
+                TextButton(onClick = { Updates.cancel() }, contentPadding = ButtonDefaults.TextButtonContentPadding) { Labeled(Icons.Rounded.Close, "Cancel", Brand.Orange) }
             }
             is Updates.State.Installing -> {
                 Text("Installing ${s.release.version}…", color = Color.White, style = MaterialTheme.typography.titleMedium)
                 Text("Android asks you to confirm: tap Update. The app opens again on the new version.", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
-                TextButton(onClick = { Updates.update(context, s.release) }, contentPadding = ButtonDefaults.TextButtonContentPadding) { Text("Ask again", color = Brand.Orange) }
+                TextButton(onClick = { Updates.update(context, s.release) }, contentPadding = ButtonDefaults.TextButtonContentPadding) { Labeled(Icons.Rounded.Refresh, "Ask again", Brand.Orange) }
             }
             is Updates.State.Allow -> {
                 Text("Allow Radiance Music to install its updates", color = Color.White, style = MaterialTheme.typography.titleMedium)
                 Text("Android asks once: turn on \"Allow from this source\", then come back here. The update goes on by itself.", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(12.dp))
-                Button(onClick = { runCatching { context.startActivity(Updates.allowIntent(context)) } }, colors = ButtonDefaults.buttonColors(containerColor = Brand.Orange)) { Text("Open the setting") }
+                Button(onClick = { runCatching { context.startActivity(Updates.allowIntent(context)) } }, colors = ButtonDefaults.buttonColors(containerColor = Brand.Orange)) { Labeled(Icons.Rounded.Settings, "Open the setting") }
             }
             is Updates.State.Failed -> {
                 Text(s.message, color = Color.White, style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(10.dp))
-                FilledTonalButton(onClick = { s.release?.let { Updates.update(context, it) } ?: Updates.check(context) }) { Text("Try again") }
+                FilledTonalButton(onClick = { s.release?.let { Updates.update(context, it) } ?: Updates.check(context) }) { Labeled(Icons.Rounded.Refresh, "Try again") }
                 s.release?.page?.takeIf { it.isNotEmpty() }?.let { page ->
-                    TextButton(onClick = { openLink(context, page) }, contentPadding = ButtonDefaults.TextButtonContentPadding) { Text("Get it from GitHub instead", color = Brand.Orange) }
+                    TextButton(onClick = { openLink(context, page) }, contentPadding = ButtonDefaults.TextButtonContentPadding) { Labeled(Icons.AutoMirrored.Rounded.OpenInNew, "Get it from GitHub instead", Brand.Orange) }
                 }
             }
         }
@@ -223,7 +230,7 @@ private fun WhatsNew(context: Context) {
                 items.forEach { Bullet(it) }
             }
             if (versions.size > 1) TextButton(onClick = { more = !more }, contentPadding = ButtonDefaults.TextButtonContentPadding) {
-                Text(if (more) "Fewer" else "Earlier versions", color = Brand.Orange)
+                Labeled(if (more) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, if (more) "Fewer" else "Earlier versions", Brand.Orange)
             }
         }
     }

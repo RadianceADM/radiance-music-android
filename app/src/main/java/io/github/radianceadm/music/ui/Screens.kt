@@ -1,5 +1,6 @@
 package io.github.radianceadm.music.ui
 
+import androidx.compose.material.icons.rounded.SortByAlpha
 import androidx.compose.foundation.background
 import io.github.radianceadm.music.update.Updates
 import androidx.compose.ui.text.font.FontWeight
@@ -100,11 +101,11 @@ fun HomeScreen(pad: PaddingValues, onSearch: () -> Unit, onSettings: () -> Unit)
                 )
                 Gap(18.dp)
                 if (liked.isEmpty()) {
-                    Button(onClick = onSearch) { Text("Search for music") }
+                    Button(onClick = onSearch) { Labeled(Icons.Rounded.Search, "Search for music") }
                 } else {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Button(onClick = { hub.play(liked.shuffled(), 0) }) { Text("Play your mix") }
-                        FilledTonalButton(onClick = { hub.play(liked, 0) }, colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color.White.copy(alpha = 0.16f), contentColor = Color.White)) { Text("Liked, A to Z") }
+                        Button(onClick = { hub.play(liked.shuffled(), 0) }) { Labeled(Icons.Rounded.Shuffle, "Play your mix") }
+                        FilledTonalButton(onClick = { hub.play(liked, 0) }, colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color.White.copy(alpha = 0.16f), contentColor = Color.White)) { Labeled(Icons.Rounded.SortByAlpha, "Liked, A to Z") }
                     }
                 }
             }

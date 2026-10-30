@@ -47,5 +47,11 @@ class ScreensTest {
     @Test fun library() { songs(); shot("library") { LibraryScreen(PaddingValues(), onSettings = {}) } }
     @Test fun home() { songs(); shot("home") { HomeScreen(PaddingValues(), onSearch = {}, onSettings = {}) } }
     @Test fun nowPlaying() = shot("now-playing") { NowPlayingScreen(onClose = {}) }
+    @Test fun lyricPicker() = shot("lyric-picker") {
+        val lines = listOf("I'm in the mood for dancing", "Romancing, ooh", "Give it up, it's a beautiful night", "So I'm dancing with my baby", "And it feels so right", "Under the stars, under the lights", "We're never going home tonight")
+            .map { Pick(it, null) }
+        val picked = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateListOf(2, 3) }
+        LyricPicker(lines, picked, Color(0xFF5C2A12), withSound = true, onDone = {})
+    }
     @Test fun share() = shot("share") { ShareScreen(Track(Source.YOUTUBE, "test", "Golden Hour", "JVKE", seconds = 209), emptyList(), onClose = {}) }
 }
