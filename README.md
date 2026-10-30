@@ -5,6 +5,10 @@ song and play it, lossless first. **Like it, save it, split it:** a liked song i
 phone with its cover, its lyrics and its music video, and split into its drums, bass, other and
 vocals right there.
 
+> **Open beta.** This is Radiance Music's first public version: it's new, some things may not work yet,
+> and it changes often. Tell us what breaks or what you'd like: [open an issue](https://github.com/RadianceADM/radiance-music-android/issues)
+> or email hello@radianceph.com.
+
 **Get it:** [music.radianceph.com](https://music.radianceph.com), or the newest
 `RadianceMusic.apk` from [Releases](https://github.com/RadianceADM/radiance-music-android/releases).
 Your phone asks once to allow installing apps from your browser (that's how an app from outside
