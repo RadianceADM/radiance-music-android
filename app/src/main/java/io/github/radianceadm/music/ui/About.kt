@@ -7,6 +7,7 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.RestartAlt
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -184,10 +185,18 @@ fun UpdatePanel() {
                 LinearProgressIndicator(progress = { s.done }, modifier = Modifier.fillMaxWidth(), color = Brand.Orange, trackColor = Brand.Line)
                 TextButton(onClick = { Updates.cancel() }, contentPadding = ButtonDefaults.TextButtonContentPadding) { Labeled(Icons.Rounded.Close, "Cancel", Brand.Orange) }
             }
+            is Updates.State.Ready -> {
+                Text("Radiance Music ${s.release.version} is ready", color = Color.White, style = MaterialTheme.typography.titleMedium)
+                Text(s.note ?: "Downloaded and checked. Restarting closes the app for a moment; a notification opens the new version.", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(12.dp))
+                Button(onClick = { Updates.restart(context, s.release) }, colors = ButtonDefaults.buttonColors(containerColor = Brand.Orange)) {
+                    Labeled(Icons.Rounded.RestartAlt, "Restart to update")
+                }
+            }
             is Updates.State.Installing -> {
-                Text("Installing ${s.release.version}…", color = Color.White, style = MaterialTheme.typography.titleMedium)
-                Text("Android asks you to confirm: tap Update. The app opens again on the new version.", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
-                TextButton(onClick = { Updates.update(context, s.release) }, contentPadding = ButtonDefaults.TextButtonContentPadding) { Labeled(Icons.Rounded.Refresh, "Ask again", Brand.Orange) }
+                Text("Updating to ${s.release.version}…", color = Color.White, style = MaterialTheme.typography.titleMedium)
+                Text("If Android asks, tap Update. The app closes while it updates; a notification opens the new version.", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
+                TextButton(onClick = { Updates.restart(context, s.release) }, contentPadding = ButtonDefaults.TextButtonContentPadding) { Labeled(Icons.Rounded.Refresh, "Ask again", Brand.Orange) }
             }
             is Updates.State.Allow -> {
                 Text("Allow Radiance Music to install its updates", color = Color.White, style = MaterialTheme.typography.titleMedium)
@@ -209,7 +218,7 @@ fun UpdatePanel() {
 
 /** A release's notes, the first few lines (GitHub's markdown, plainly). */
 @Composable
-private fun Notes(notes: String) {
+internal fun Notes(notes: String) {
     val lines = notes.lines().map { it.trim() }.filter { it.startsWith("- ") }.map { it.removePrefix("- ") }.take(4)
     if (lines.isEmpty()) return
     Spacer(Modifier.height(8.dp))
@@ -237,7 +246,7 @@ private fun WhatsNew(context: Context) {
 }
 
 @Composable
-private fun Bullet(text: String) {
+internal fun Bullet(text: String) {
     Row(Modifier.padding(vertical = 3.dp)) {
         Text("•", color = Brand.Orange, modifier = Modifier.width(16.dp))
         Text(bold(text), color = Color.White.copy(alpha = 0.86f), style = MaterialTheme.typography.bodyMedium)
@@ -287,7 +296,7 @@ private fun bold(text: String): AnnotatedString = buildAnnotatedString {
     }
 }
 
-private fun mb(bytes: Long) = if (bytes <= 0) "size unknown" else "${(bytes + 500_000) / 1_000_000} MB"
+internal fun mb(bytes: Long) = if (bytes <= 0) "size unknown" else "${(bytes + 500_000) / 1_000_000} MB"
 
 fun openLink(context: Context, url: String) {
     runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }

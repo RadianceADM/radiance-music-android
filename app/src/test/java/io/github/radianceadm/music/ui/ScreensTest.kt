@@ -1,7 +1,9 @@
 package io.github.radianceadm.music.ui
 
 import android.graphics.Bitmap
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
@@ -30,7 +32,7 @@ class ScreensTest {
     private fun shot(name: String, content: @Composable () -> Unit) {
         rule.setContent { RadianceTheme { Surface(color = Brand.Night, contentColor = Color.White) { content() } } }
         rule.waitForIdle()
-        val dir = File("/srv/build/android/screens")
+        val dir = File(System.getenv("SCREENS_DIR") ?: "/srv/build/android/screens")
         if (!dir.canWrite()) return
         val bmp: Bitmap = rule.onRoot().captureToImage().asAndroidBitmap()
         File(dir, "$name.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
@@ -55,5 +57,21 @@ class ScreensTest {
         LyricPicker(lines, picked, Color(0xFF5C2A12), withSound = true, onDone = {})
     }
     @Test fun guide() = shot("guide") { GuideScreen(onDone = {}) }
+
+    // the update pop-up, each step (owner, 2026-10-31: a modal when an update is out, with Remind me later)
+    private val release = io.github.radianceadm.music.update.Updates.Release(
+        "0.5.13", "## What's new\n- The update pop-up: Update now, Remind me later, Skip this version\n- Restart to update once it's downloaded\n- Faster search", "", 218_000_000, "",
+    )
+    private fun card(name: String, state: io.github.radianceadm.music.update.Updates.State, playing: Boolean = false, metered: Boolean = false) = shot(name) {
+        androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)), contentAlignment = androidx.compose.ui.Alignment.Center) {
+            UpdateCard(state, playing, metered, {}, {}, {}, {}, {}, {}, {}, {})
+        }
+    }
+    @Test fun updateOut() = card("update-1-out", io.github.radianceadm.music.update.Updates.State.Available(release), metered = true)
+    @Test fun updateDownloading() = card("update-2-downloading", io.github.radianceadm.music.update.Updates.State.Downloading(release, 0.42f))
+    @Test fun updateReady() = card("update-3-ready", io.github.radianceadm.music.update.Updates.State.Ready(release), playing = true)
+    @Test fun updateInstalling() = card("update-4-installing", io.github.radianceadm.music.update.Updates.State.Installing(release))
+    @Test fun updateAllow() = card("update-5-allow", io.github.radianceadm.music.update.Updates.State.Allow(release))
+    @Test fun updateFailed() = card("update-6-failed", io.github.radianceadm.music.update.Updates.State.Failed("Couldn't update: the download stopped", release))
     @Test fun share() = shot("share") { ShareScreen(Track(Source.YOUTUBE, "test", "Golden Hour", "JVKE", seconds = 209), emptyList(), onClose = {}) }
 }

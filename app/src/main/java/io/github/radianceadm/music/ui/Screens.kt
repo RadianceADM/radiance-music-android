@@ -420,7 +420,7 @@ fun PageTitle(title: String, onSettings: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 14.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(title, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.ExtraBold, color = Color.White, modifier = Modifier.weight(1f))
         IconButton(onClick = onSettings) {
-            BadgedBox(badge = { if (update is Updates.State.Available) Badge(containerColor = Brand.Orange) }) {
+            BadgedBox(badge = { if (update is Updates.State.Available || update is Updates.State.Ready) Badge(containerColor = Brand.Orange) }) {
                 Icon(Icons.Rounded.Settings, "Settings", tint = Color.White)
             }
         }

@@ -76,10 +76,14 @@ fun SettingsScreen(onClose: () -> Unit, onGuide: () -> Unit = {}) {
     Column(Modifier.fillMaxSize().background(Brand.Night).statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(bottom = 32.dp)) {
         IconButton(onClick = onClose, modifier = Modifier.padding(start = 4.dp, top = 4.dp)) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", tint = Color.White) }
         Text("Settings", style = MaterialTheme.typography.displaySmall, color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp))
-        (update as? Updates.State.Available)?.let { s ->
-            SettingsGroup(null) {
+        when (val s = update) {
+            is Updates.State.Available -> SettingsGroup(null) {
                 SettingsItem(Icons.Rounded.SystemUpdate, "Radiance Music ${s.release.version} is out", "Update it here, over the air") { about = true }
             }
+            is Updates.State.Ready -> SettingsGroup(null) {
+                SettingsItem(Icons.Rounded.SystemUpdate, "Radiance Music ${s.release.version} is ready", "Downloaded: restart to update") { about = true }
+            }
+            else -> Unit
         }
         SettingsGroup("Share songs") {
             SettingsItem(Icons.Rounded.QrCode2, "Send songs", "Shows a QR: another phone scans it and takes your songs, with their parts, lyrics and covers") {
