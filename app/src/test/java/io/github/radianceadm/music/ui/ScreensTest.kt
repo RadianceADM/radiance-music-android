@@ -57,6 +57,7 @@ class ScreensTest {
         LyricPicker(lines, picked, Color(0xFF5C2A12), withSound = true, onDone = {})
     }
     @Test fun guide() = shot("guide") { GuideScreen(onDone = {}) }
+    @Test fun mixer() = shot("mixer") { MixerSheet(Track(Source.YOUTUBE, "test", "Golden Hour", "JVKE", seconds = 209), mixable = true, onDone = {}) }
 
     // the update pop-up, each step (owner, 2026-10-31: a modal when an update is out, with Remind me later)
     private val release = io.github.radianceadm.music.update.Updates.Release(

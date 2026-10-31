@@ -1,6 +1,10 @@
 package io.github.radianceadm.music.ui
 
 import androidx.compose.material.icons.rounded.AutoFixOff
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.automirrored.rounded.CallSplit
@@ -63,6 +67,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -285,7 +291,16 @@ fun NowPlayingScreen(onClose: () -> Unit) {
     }
     if (t != null) sharing?.let { start -> ShareSheet(t, start, onDismiss = { sharing = null }) }
     if (showQueue) ModalBottomSheet(onDismissRequest = { showQueue = false }, containerColor = Brand.Sheet) { QueueSheet() }
-    if (showMixer && t != null) ModalBottomSheet(onDismissRequest = { showMixer = false }, containerColor = Brand.Sheet) { MixerSheet(t, mixable) }
+    // the Mixer's sheet: one height (it bounced between half and full when scrolled: owner,
+    // 2026-11-01 "nag unli up and down sya"), and it doesn't move under a finger on a slider
+    // ("ang hirap i swipe"): it closes with Done, a tap outside, or Back
+    if (showMixer && t != null) ModalBottomSheet(
+        onDismissRequest = { showMixer = false },
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        sheetGesturesEnabled = false,
+        dragHandle = null,
+        containerColor = Brand.Sheet,
+    ) { MixerSheet(t, mixable) { showMixer = false } }
 }
 
 /** The handle at the top: tap it, or pull it down, to close. */
@@ -482,11 +497,14 @@ private fun LyricsIcon(on: Boolean) {
  * A song from a server you joined is split there (when its owner lets you), and its parts come from there.
  */
 @Composable
-private fun MixerSheet(t: Track, mixable: Boolean) {
+internal fun MixerSheet(t: Track, mixable: Boolean, onDone: () -> Unit) {
     val mixer = App.instance.mixer
     val gains by mixer.gains.collectAsState()
-    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 22.dp, end = 22.dp, bottom = 28.dp)) {
-        Text("Mixer", style = MaterialTheme.typography.headlineSmall, color = Color.White)
+    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 22.dp, end = 22.dp, top = 18.dp, bottom = 28.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Mixer", style = MaterialTheme.typography.headlineSmall, color = Color.White, modifier = Modifier.weight(1f))
+            FilledTonalButton(onClick = onDone) { Labeled(Icons.Rounded.Check, "Done") }
+        }
         if (mixable) {
             Text("Each part as loud as you like. Turning one down keeps the song as loud as it was whole.", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
             Gap(12.dp)
@@ -503,6 +521,27 @@ private fun MixerSheet(t: Track, mixable: Boolean) {
     }
 }
 
+/**
+ * A Mixer slider: a round thumb you can see and catch, not the thin bar Material draws (owner,
+ * 2026-11-01: "yung slider ang hirap i swipe"). A tap anywhere on it moves it there, as before.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MixSlider(value: Float, onValueChange: (Float) -> Unit, modifier: Modifier = Modifier, onValueChangeFinished: (() -> Unit)? = null) {
+    val touch = remember { MutableInteractionSource() }
+    val colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Brand.Orange, inactiveTrackColor = Color.White.copy(alpha = 0.2f))
+    Slider(
+        value = value,
+        onValueChange = onValueChange,
+        onValueChangeFinished = onValueChangeFinished,
+        colors = colors,
+        interactionSource = touch,
+        thumb = { SliderDefaults.Thumb(interactionSource = touch, colors = colors, thumbSize = DpSize(26.dp, 26.dp)) },
+        modifier = modifier,
+    )
+}
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PartSliders(gains: Map<String, Float>) {
     val mixer = App.instance.mixer
@@ -510,17 +549,14 @@ private fun PartSliders(gains: Map<String, Float>) {
         for ((name, label) in listOf("drums" to "Drums", "bass" to "Bass", "other" to "Other", "vocals" to "Vocals")) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(label, color = Color.White, modifier = Modifier.width(72.dp))
-                Slider(
-                    value = gains[name] ?: 1f,
-                    onValueChange = { mixer.set(name, it) },
-                    colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Brand.Orange, inactiveTrackColor = Color.White.copy(alpha = 0.2f)),
-                    modifier = Modifier.weight(1f),
-                )
+                MixSlider(value = gains[name] ?: 1f, onValueChange = { mixer.set(name, it) }, modifier = Modifier.weight(1f))
                 Text("${((gains[name] ?: 1f) * 100).toInt()} %", color = Brand.Dim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(44.dp).padding(start = 8.dp))
             }
         }
         Gap(8.dp)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // the buttons wrap to a second line when they don't fit (owner, 2026-11-01: "yung reset
+        // from top to down. masikep": in one row, Reset was squeezed to a letter a line)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             FilledTonalButton(onClick = { mixer.preset(vocals = 0f, rest = 1f) }) { Labeled(Icons.Rounded.MicOff, "No vocals") }
             FilledTonalButton(onClick = { mixer.preset(vocals = 1f, rest = 0f) }) { Labeled(Icons.Rounded.Mic, "Vocals only") }
             FilledTonalButton(onClick = { mixer.preset(vocals = 1f, rest = 1f) }) { Labeled(Icons.Rounded.RestartAlt, "Reset") }
@@ -648,13 +684,7 @@ private fun EffectSliders() {
         Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(label, color = Color.White, modifier = Modifier.width(72.dp))
-                Slider(
-                    value = value,
-                    onValueChange = onChange,
-                    onValueChangeFinished = { Effects.save(context) },
-                    colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Brand.Orange, inactiveTrackColor = Color.White.copy(alpha = 0.2f)),
-                    modifier = Modifier.weight(1f),
-                )
+                MixSlider(value = value, onValueChange = onChange, onValueChangeFinished = { Effects.save(context) }, modifier = Modifier.weight(1f))
                 Text(shown, color = Brand.Dim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(56.dp).padding(start = 8.dp))
             }
             Text(explain, color = Brand.Dim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = 72.dp))

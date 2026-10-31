@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.14
+
+- **Join a Radiance Music Server:** your own server, or a friend's. Settings → Servers → Join a
+  server, then scan the invite's QR or open its link. The server's songs show in your Library under
+  its name ("Bassi's server"): play them, save them on your phone with their parts and lyrics, add
+  your own songs to it, and split songs there instead of on your phone.
+- **Listening parties:** start or join one on a server, and everyone in it hears the same song at
+  the same moment, wherever they are. A shared queue, who's listening, and reactions as it plays;
+  the host plays, pauses and skips.
+- The Mixer's and the Share sheet's buttons are in the app's own colours (a grey-purple showed).
+- **The Mixer holds still:** it opens at its full height and stays there; scrolling it no longer
+  sends it bouncing up and down. Close it with Done (or a tap above it, or Back).
+- **Mixer sliders are easier to move:** a big round knob you can catch, and the sheet no longer
+  pulls away under your finger.
+- The Mixer's No vocals / Vocals only / Reset buttons go to a second line when the screen is
+  narrow (Reset was squeezed to a letter a line).
+
 ## 0.5.13
 
 - **A small download (about 43 MB, it was 208 MB):** the splitter's model isn't inside the app
