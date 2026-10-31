@@ -14,6 +14,7 @@ import androidx.media3.session.SessionToken
 import io.github.radianceadm.music.App
 import io.github.radianceadm.music.data.Saver
 import io.github.radianceadm.music.model.Track
+import io.github.radianceadm.music.server.Servers
 import io.github.radianceadm.music.ui.Notice
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,7 +23,8 @@ import org.json.JSONObject
 /** A song as the player holds it (the song itself rides along in its extras). */
 fun Track.mediaItem(context: Context): MediaItem {
     val cover = Saver.coverFile(context, this)
-    val art = if (cover.exists()) Uri.fromFile(cover) else art.takeIf { it.isNotEmpty() }?.let { Uri.parse(it) }
+    // a server's cover: this phone's key in its address (the lock screen's picture can't send one otherwise)
+    val art = if (cover.exists()) Uri.fromFile(cover) else art.takeIf { it.isNotEmpty() }?.let { Uri.parse(Servers.sign(it)) }
     val meta = MediaMetadata.Builder()
         .setTitle(title)
         .setArtist(artist)
@@ -122,9 +124,34 @@ class PlayerHub(private val context: Context) {
     val position: Long get() = controller?.currentPosition ?: 0
     val duration: Long get() = controller?.duration?.takeIf { it > 0 } ?: ((_current.value?.seconds ?: 0) * 1000L)
 
-    /** Plays [list] from [start], as the songs are now (saved copies when liked). */
+    /** What's in the player now, to come back to (a listening party plays in its place for a while). */
+    data class Mine(val queue: List<Track>, val index: Int, val positionMs: Long, val playing: Boolean)
+
+    fun mine(): Mine? {
+        val c = controller ?: return null
+        return Mine(_queue.value, c.currentMediaItemIndex, c.currentPosition, _playing.value).takeIf { it.queue.isNotEmpty() }
+    }
+
+    /** Back to [m] (the music before the party), playing again if it was. Nothing to go back to: the player stops. */
+    fun resume(m: Mine?) = connect {
+        controller?.run {
+            setPlaybackSpeed(1f)
+            if (m == null) {
+                stop()
+                clearMediaItems()
+                return@run
+            }
+            val lib = App.instance.library
+            setMediaItems(m.queue.map { lib.best(it).mediaItem(context) }, m.index.coerceIn(0, m.queue.size - 1), m.positionMs)
+            prepare()
+            if (m.playing) play()
+        }
+    }
+
+    /** Plays [list] from [start], as the songs are now (saved copies when liked). In a party: you leave it first. */
     fun play(list: List<Track>, start: Int) = connect {
         val lib = App.instance.library
+        if (App.instance.party.joined) App.instance.party.leave(resume = false)
         picked()
         controller?.run {
             setMediaItems(list.map { lib.best(it).mediaItem(context) }, start.coerceIn(0, list.size - 1), 0)
@@ -149,6 +176,8 @@ class PlayerHub(private val context: Context) {
     }
 
     fun toggle() = controller?.run {
+        // in a party: listening here or not (the party goes on)
+        if (App.instance.party.joined) return@run App.instance.party.listenHere(!isPlaying)
         if (isPlaying) pause()
         else {
             // stopped by a song that wouldn't play: Play tries it again
@@ -157,11 +186,12 @@ class PlayerHub(private val context: Context) {
             play()
         }
     }
-    fun next() = controller?.run { picked(); seekToNextMediaItem(); wake() }
-    fun previous() = controller?.run { picked(); if (currentPosition > 4000 || !hasPreviousMediaItem()) seekTo(0) else seekToPreviousMediaItem(); wake() }
+    // in a party the host moves it along (the party's own screen): Next skips there if you may, Previous and seeking stay with it
+    fun next() = controller?.run { if (App.instance.party.joined) return@run App.instance.party.skip(); picked(); seekToNextMediaItem(); wake() }
+    fun previous() = controller?.run { if (App.instance.party.joined) return@run; picked(); if (currentPosition > 4000 || !hasPreviousMediaItem()) seekTo(0) else seekToPreviousMediaItem(); wake() }
     /** The song before, whatever the place in this one (a swipe on the cover). */
-    fun previousSong() = controller?.run { picked(); if (hasPreviousMediaItem()) seekToPreviousMediaItem() else seekTo(0); wake() }
-    fun seek(ms: Long) = controller?.seekTo(ms)
+    fun previousSong() = controller?.run { if (App.instance.party.joined) return@run; picked(); if (hasPreviousMediaItem()) seekToPreviousMediaItem() else seekTo(0); wake() }
+    fun seek(ms: Long) = controller?.run { if (App.instance.party.joined) App.instance.party.seek(ms) else seekTo(ms) }
     fun playAt(i: Int) = controller?.run { picked(); seekTo(i, 0); wake(); play() }
 
     /** You picked a song: whatever wouldn't play before is forgotten. */
@@ -227,6 +257,7 @@ class PlayerHub(private val context: Context) {
 
     fun saveSession() {
         val c = controller ?: return
+        if (App.instance.party.joined) return // where you left off is your own music, not the party's
         App.instance.library.saveSession(_queue.value, c.currentMediaItemIndex, c.currentPosition)
     }
 }

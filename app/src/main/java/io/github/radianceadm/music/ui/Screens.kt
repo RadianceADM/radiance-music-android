@@ -78,6 +78,9 @@ import io.github.radianceadm.music.model.Track
 import io.github.radianceadm.music.model.matches
 import io.github.radianceadm.music.net.Connectivity
 import io.github.radianceadm.music.net.Errors
+import io.github.radianceadm.music.server.Servers
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import io.github.radianceadm.music.source.Archive
 import io.github.radianceadm.music.source.YouTube
 import java.util.Calendar
@@ -261,12 +264,40 @@ fun SearchScreen(pad: PaddingValues) {
  * Library, roomy (owner, 2026-10-31: "ang panget ng library", "ang sikip sa taas"):
  * a big title with Settings beside it, the two lists as pills, the search, then
  * Play and Shuffle side by side, all scrolling away with the songs. Sharing songs
- * by QR lives in Settings now.
+ * by QR lives in Settings now. Each Radiance Music Server you joined is one more
+ * pill, with its name ("Bassi's server"): its library, its party, its splitting.
  */
 @Composable
-fun LibraryScreen(pad: PaddingValues, onSettings: () -> Unit) {
-    var tab by rememberSaveable { mutableStateOf(0) }
+fun LibraryScreen(pad: PaddingValues, onSettings: () -> Unit, onParty: () -> Unit = {}) {
+    var picked by rememberSaveable { mutableStateOf(LIKED) }
     var filter by rememberSaveable { mutableStateOf("") }
+    val servers by Servers.list.collectAsState()
+    // Settings → a server → Open its library: here, on it
+    val opening by Servers.open.collectAsState()
+    LaunchedEffect(opening) {
+        opening?.let {
+            picked = it
+            Servers.open.value = null
+        }
+    }
+    val server = servers.firstOrNull { it.base == picked }
+    // a server left meanwhile: back to Liked Songs
+    val tab = when {
+        picked == HISTORY -> 1
+        server != null -> 2
+        else -> 0
+    }
+    val pills: @Composable () -> Unit = {
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Chip("Liked Songs", App.instance.library.liked.collectAsState().value.size.takeIf { it > 0 }, tab == 0) { picked = LIKED }
+            Chip("History", null, tab == 1) { picked = HISTORY }
+            servers.forEach { s -> Chip(s.name, null, s.base == server?.base) { picked = s.base } }
+        }
+    }
+    if (server != null) {
+        ServerLibrary(pad, server, header = { PageTitle("Library", onSettings); pills() }, onParty = onParty)
+        return
+    }
     val lib = App.instance.library
     val liked by lib.liked.collectAsState()
     val history by lib.history.collectAsState()
@@ -283,12 +314,7 @@ fun LibraryScreen(pad: PaddingValues, onSettings: () -> Unit) {
         contentPadding = PaddingValues(top = pad.calculateTopPadding(), bottom = pad.calculateBottomPadding() + 12.dp),
     ) {
         item { PageTitle("Library", onSettings) }
-        item {
-            Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Chip("Liked Songs", if (liked.isEmpty()) null else liked.size, tab == 0) { tab = 0 }
-                Chip("History", null, tab == 1) { tab = 1 }
-            }
-        }
+        item { pills() }
         saving?.let { item { Note(it) } }
         if (tab == 0) {
             item {
@@ -335,6 +361,10 @@ fun LibraryScreen(pad: PaddingValues, onSettings: () -> Unit) {
     }
     }
 }
+
+/** Library's own lists (any other pill is a server: its address). */
+private const val LIKED = "liked"
+private const val HISTORY = "history"
 
 /** The rail's letters, in the order songs are filed (as the computer's). */
 private const val AZ = "ABCDEFGHIJKLMNOPQRSTUVWXYZ#"
@@ -428,7 +458,7 @@ fun PageTitle(title: String, onSettings: () -> Unit) {
 }
 
 @Composable
-private fun Chip(label: String, count: Int?, on: Boolean, onClick: () -> Unit) {
+internal fun Chip(label: String, count: Int?, on: Boolean, onClick: () -> Unit) {
     Row(
         Modifier.clip(RoundedCornerShape(50)).background(if (on) Color.White else Brand.Card).clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -440,7 +470,7 @@ private fun Chip(label: String, count: Int?, on: Boolean, onClick: () -> Unit) {
 
 /** Play or Shuffle: wide, side by side, as Apple Music's. */
 @Composable
-private fun BigButton(icon: ImageVector, label: String, enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
+internal fun BigButton(icon: ImageVector, label: String, enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
     Row(
         modifier.clip(RoundedCornerShape(14.dp)).background(Brand.Card).clickable(enabled = enabled, onClick = onClick).padding(vertical = 13.dp),
         horizontalArrangement = Arrangement.Center,

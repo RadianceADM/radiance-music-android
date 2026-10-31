@@ -143,6 +143,7 @@ import io.github.radianceadm.music.net.Connectivity
 import io.github.radianceadm.music.play.Effects
 import io.github.radianceadm.music.source.Line
 import io.github.radianceadm.music.source.Lyrics
+import io.github.radianceadm.music.server.Servers
 import io.github.radianceadm.music.split.Model
 import io.github.radianceadm.music.split.Setup
 import io.github.radianceadm.music.split.SplitService
@@ -476,7 +477,10 @@ private fun LyricsIcon(on: Boolean) {
     }
 }
 
-/** Each part as loud as you like (a split song); the song stays as loud as it was whole. And the effects, on every song. */
+/**
+ * Each part as loud as you like (a split song); the song stays as loud as it was whole. And the effects, on every song.
+ * A song from a server you joined is split there (when its owner lets you), and its parts come from there.
+ */
 @Composable
 private fun MixerSheet(t: Track, mixable: Boolean) {
     val mixer = App.instance.mixer
@@ -487,6 +491,8 @@ private fun MixerSheet(t: Track, mixable: Boolean) {
             Text("Each part as loud as you like. Turning one down keeps the song as loud as it was whole.", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
             Gap(12.dp)
             PartSliders(gains)
+        } else if (Servers.of(t) != null) {
+            ServerSplitPanel(t) { SplitPanel(t) }
         } else {
             SplitPanel(t)
         }
@@ -819,8 +825,9 @@ fun MiniPlayer(onOpen: () -> Unit) {
             Artwork(t.art, 44.dp, corner = 10.dp)
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 Text(t.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                // why the music stopped, in its place while there's one
-                Text(problem ?: t.artist, style = MaterialTheme.typography.bodyMedium, color = if (problem != null) Brand.Glow else Brand.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // why the music stopped, in its place while there's one; in a party, that it's the party's
+                val inParty by App.instance.party.now.collectAsState()
+                Text(problem ?: if (inParty != null) "Listening party · ${t.artist}" else t.artist, style = MaterialTheme.typography.bodyMedium, color = if (problem != null) Brand.Glow else Brand.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             IconButton(onClick = { hub.toggle() }) {
                 if (loading) CircularProgressIndicator(color = Brand.Orange, strokeWidth = 2.dp, modifier = Modifier.size(36.dp).semantics { contentDescription = "Loading the song" })

@@ -27,6 +27,7 @@ import com.google.common.util.concurrent.ListenableFuture
 import io.github.radianceadm.music.App
 import io.github.radianceadm.music.net.Errors
 import io.github.radianceadm.music.net.Http
+import io.github.radianceadm.music.server.Servers
 import io.github.radianceadm.music.source.YouTube
 import io.github.radianceadm.music.ui.MainActivity
 
@@ -34,7 +35,9 @@ import io.github.radianceadm.music.ui.MainActivity
  * Plays in the background: the notification, the lock screen, headphones'
  * and Bluetooth buttons all come from its media session. A YouTube song is
  * queued as "yt:ID" and its stream is found only when it starts (YouTube's
- * addresses expire, so a long queue never goes stale).
+ * addresses expire, so a long queue never goes stale). A song on a Radiance
+ * Music Server you joined gets this phone's key in its address (`?t=`) only
+ * as it starts (it's never kept with the song).
  */
 @OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService() {
@@ -45,7 +48,8 @@ class PlaybackService : MediaSessionService() {
         val http = OkHttpDataSource.Factory(Http.client).setUserAgent(Http.USER_AGENT)
         val upstream = DefaultDataSource.Factory(this, http)
         val resolving = ResolvingDataSource.Factory(upstream) { spec ->
-            if (spec.uri.scheme == "yt") spec.withUri(Uri.parse(YouTube.audio(spec.uri.schemeSpecificPart).url)) else spec
+            if (spec.uri.scheme == "yt") spec.withUri(Uri.parse(YouTube.audio(spec.uri.schemeSpecificPart).url))
+            else Servers.sign(spec.uri.toString()).let { signed -> if (signed == spec.uri.toString()) spec else spec.withUri(Uri.parse(signed)) }
         }
         // every song it plays goes through the effects (Low cut, High cut, Reverb)
         val renderers = object : DefaultRenderersFactory(this) {
@@ -62,6 +66,7 @@ class PlaybackService : MediaSessionService() {
             .setHandleAudioBecomingNoisy(true) // headphones out: it pauses
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
+        exo = player
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 mediaItem?.let { trackOf(it) }?.let { App.instance.library.played(it) }
@@ -77,7 +82,8 @@ class PlaybackService : MediaSessionService() {
                     player.seekToNextMediaItem()
                     player.prepare() // still meant to play: it plays
                 }
-                hub.couldnt(song, Errors.say(error), then)
+                // a song on a server you joined: why that server didn't send it
+                hub.couldnt(song, song?.let { Servers.of(it) }?.let { Errors.server(error, it.name) } ?: Errors.say(error), then)
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -97,6 +103,16 @@ class PlaybackService : MediaSessionService() {
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 
+    companion object {
+        /**
+         * The player itself while the service is up (the app's own process):
+         * the listening party keeps it in step to the millisecond, where a
+         * controller's place is only an estimate. Main thread only.
+         */
+        @Volatile var exo: ExoPlayer? = null
+            private set
+    }
+
     /** Swiped away from recent apps: it plays on if it's playing, else it goes. */
     override fun onTaskRemoved(rootIntent: Intent?) {
         val p = session?.player
@@ -104,6 +120,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        exo = null
         session?.run {
             player.release()
             release()

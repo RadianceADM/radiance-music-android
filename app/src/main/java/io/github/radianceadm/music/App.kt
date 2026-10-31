@@ -10,6 +10,13 @@ import io.github.radianceadm.music.data.Saver
 import io.github.radianceadm.music.model.Track
 import io.github.radianceadm.music.net.Connectivity
 import io.github.radianceadm.music.net.Errors
+import io.github.radianceadm.music.net.Http
+import io.github.radianceadm.music.server.Party
+import io.github.radianceadm.music.server.Servers
+import coil3.ImageLoader
+import coil3.PlatformContext
+import coil3.SingletonImageLoader
+import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import io.github.radianceadm.music.net.NewPipeDownloader
 import io.github.radianceadm.music.play.Effects
 import io.github.radianceadm.music.play.Mixer
@@ -37,13 +44,15 @@ import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.localization.Localization
 
-class App : Application() {
+class App : Application(), SingletonImageLoader.Factory {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     lateinit var library: Library
     lateinit var player: PlayerHub
     lateinit var mixer: Mixer
     lateinit var splits: Splits
     lateinit var share: Session
+    /** The listening party this phone is in (on a server you joined), or none. */
+    lateinit var party: Party
     /** The Share songs sheet, open (for these songs; null: Liked Songs), or not. */
     val shareOpen = MutableStateFlow<ShareAsk?>(null)
 
@@ -75,6 +84,7 @@ class App : Application() {
         instance = this
         NewPipe.init(NewPipeDownloader(), Localization("en", "US"))
         Connectivity.start(this) // online or not, watched from now
+        Servers.load(this) // the Radiance Music Servers you joined (their keys go with what's asked of them)
         Effects.load(this)
         io.github.radianceadm.music.ui.Looks.load(this) // True Black or Stone
         library = Library(this)
@@ -82,6 +92,7 @@ class App : Application() {
         mixer = Mixer(this)
         splits = Splits(this)
         share = Session(this)
+        party = Party(this)
         saveMissing()
         // back online: liked songs that couldn't be saved meanwhile are saved now
         scope.launch {
@@ -102,16 +113,23 @@ class App : Application() {
 
     fun unlike(t: Track) = library.unlike(t)
 
-    private suspend fun saveOne(t: Track) = saving.withLock {
+    /** Like it and wait for it to be saved (a server's song, Save): saved or not (why: told). */
+    suspend fun saveLiked(t: Track): Boolean {
+        library.like(t)
+        return saveOne(t)
+    }
+
+    private suspend fun saveOne(t: Track): Boolean = saving.withLock {
         val now = library.best(t)
-        if (!library.isLiked(t.key)) return@withLock
-        runCatching { Saver.save(this, now) { _status.value = it } }
+        if (!library.isLiked(t.key)) return@withLock false
+        val done = runCatching { Saver.save(this, now) { _status.value = it } }
             .onSuccess { saved ->
                 library.update(saved)
                 withContext(Dispatchers.Main) { player.refresh(saved) }
             }
             .onFailure { e -> couldntSave(t, e) }
         _status.value = null
+        done.isSuccess
     }
 
     /** A liked song that couldn't be saved: why, in plain words. Offline, that's said once, and it's saved when you're back. */
@@ -120,7 +138,9 @@ class App : Application() {
             if (!toldOffline) tell(Notice("You're offline. Liked songs are saved when you're back online.", Notice.connect()))
             toldOffline = true
         } else {
-            tell(Notice("Couldn't save “${t.title}”. ${Errors.say(e)}", Notice.retry { scope.launch { saveOne(t) } }))
+            // a server's song: why that server didn't send it ("Bassi's server isn't answering…")
+            val why = Servers.of(t)?.let { Errors.server(e, it.name) } ?: Errors.say(e)
+            tell(Notice("Couldn't save “${t.title}”. $why", Notice.retry { scope.launch { saveOne(t) } }))
         }
     }
 
@@ -143,6 +163,10 @@ class App : Application() {
             }
         }
     }
+
+    /** Pictures (covers) come through Http's client: a server's covers get this phone's key with them. */
+    override fun newImageLoader(context: PlatformContext): ImageLoader =
+        ImageLoader.Builder(context).components { add(OkHttpNetworkFetcherFactory(callFactory = { Http.client })) }.build()
 
     /** Songs to share (null: Liked Songs); [scan]: straight to reading another's QR. */
     data class ShareAsk(val songs: List<Track>?, val scan: Boolean = false)

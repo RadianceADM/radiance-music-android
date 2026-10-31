@@ -77,6 +77,15 @@ fun RadianceTheme(content: @Composable () -> Unit) {
         primary = Brand.Orange,
         onPrimary = Color(0xFF1A0E02),
         secondary = Brand.Glow,
+        // the "container" colours too: Material's own (a purple-grey) showed on tonal buttons
+        // (the Mixer's No vocals, the Share sheet) where none were set
+        primaryContainer = Color(0xFF5A3313),
+        onPrimaryContainer = Brand.Glow,
+        secondaryContainer = Brand.Card,
+        onSecondaryContainer = Color.White,
+        tertiary = Brand.Glow,
+        tertiaryContainer = Brand.Card,
+        onTertiaryContainer = Color.White,
         background = Brand.Night,
         onBackground = Color.White,
         surface = Brand.Night,
@@ -86,6 +95,8 @@ fun RadianceTheme(content: @Composable () -> Unit) {
         surfaceContainer = Brand.Sheet,
         surfaceContainerHigh = Brand.Card,
         surfaceContainerLow = Brand.Night,
+        surfaceContainerHighest = Brand.Card,
+        surfaceContainerLowest = Brand.Night,
         outline = Brand.Line,
     )
     MaterialTheme(colorScheme = colors, typography = type, shapes = shapes, content = content)

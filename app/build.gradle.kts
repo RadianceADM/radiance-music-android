@@ -95,6 +95,7 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.17") // the story card drawn on the computer, to look at
     testImplementation("androidx.compose.ui:ui-test-junit4") // the screens drawn on the computer, to look at
+    testImplementation("com.squareup.okhttp3:mockwebserver3:5.5.1") // a pretend Radiance Music Server (its API and the party's WebSocket)
     debugImplementation("androidx.compose.ui:ui-test-manifest")
     androidTestImplementation("androidx.test:runner:1.7.0") // the story video made on a real Android (the emulator)
     androidTestImplementation("androidx.test.ext:junit:1.3.0")

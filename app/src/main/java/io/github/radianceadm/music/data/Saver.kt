@@ -15,6 +15,7 @@ import io.github.radianceadm.music.model.Source
 import io.github.radianceadm.music.model.Track
 import io.github.radianceadm.music.net.Http
 import io.github.radianceadm.music.net.fail
+import io.github.radianceadm.music.server.ServerSongs
 import io.github.radianceadm.music.source.Lyrics
 import io.github.radianceadm.music.source.LyricsFinder
 import io.github.radianceadm.music.source.YouTube
@@ -76,6 +77,12 @@ object Saver {
      */
     private suspend fun saveSong(context: Context, t: Track): Uri {
         val collection = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        if (t.source == Source.SERVER) {
+            // from a Radiance Music Server you joined: its file as it is there (Opus, FLAC or AAC), its key going along
+            val ext = t.id.substringAfterLast('/').substringBefore('?').substringAfterLast('.', "m4a").lowercase().filter { it.isLetterOrDigit() }.take(5)
+            val mime = when (ext) { "flac" -> "audio/flac"; "opus", "ogg" -> "audio/ogg"; else -> "audio/mp4" }
+            return keep(context, collection, "${name(t)}.$ext", mime, "Music/Radiance Music") { out -> Http.download(t.id, out, null) }
+        }
         if (t.source != Source.YOUTUBE) {
             return keep(context, collection, "${name(t)}.flac", "audio/flac", "Music/Radiance Music") { out -> Http.download(t.id, out, null) }
         }
@@ -133,7 +140,8 @@ object Saver {
     fun lyrics(context: Context, t: Track): Lyrics {
         val f = lyricsFile(context, t)
         if (f.exists()) return LyricsFinder.fromFile(f.readText())
-        val found = LyricsFinder.find(t)
+        // a server's song: its own lyrics there first (each word timed, often)
+        val found = (if (t.source == Source.SERVER) ServerSongs.lyrics(t) else null) ?: LyricsFinder.find(t)
         if (t.file != null) found.toFile()?.let { text ->
             f.parentFile?.mkdirs()
             f.writeText(text)

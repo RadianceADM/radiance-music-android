@@ -52,18 +52,19 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.github.radianceadm.music.App
+import io.github.radianceadm.music.server.Server
 import io.github.radianceadm.music.split.Splits
 import io.github.radianceadm.music.update.Updates
 import kotlin.math.roundToInt
 
 /**
  * Settings (owner, 2026-10-31: "need paren naten ng settings sa app, dun mo ilagay
- * yung get or received songs"): sharing songs by QR (send, get, receive here), how
- * many cores splitting may use, the look (True Black or Stone, as the computer app),
- * updates, and About.
+ * yung get or received songs"): sharing songs by QR (send, get, receive here), the
+ * Radiance Music Servers you joined (and joining one), how many cores splitting may
+ * use, the look (True Black or Stone, as the computer app), updates, and About.
  */
 @Composable
-fun SettingsScreen(onClose: () -> Unit, onGuide: () -> Unit = {}) {
+fun SettingsScreen(onClose: () -> Unit, onGuide: () -> Unit = {}, onOpenServer: (Server) -> Unit = {}, checkServers: Boolean = true) {
     var about by rememberSaveable { mutableStateOf(false) }
     BackHandler(enabled = !about, onBack = onClose)
     if (about) {
@@ -97,6 +98,7 @@ fun SettingsScreen(onClose: () -> Unit, onGuide: () -> Unit = {}) {
                 app.shareOpen.value = App.ShareAsk(null)
             }
         }
+        ServersGroup(onOpen = onOpenServer, check = checkServers)
         SettingsGroup("Splitting") { Cores() }
         SettingsGroup("Look") {
             Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {

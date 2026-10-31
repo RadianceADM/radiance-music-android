@@ -20,6 +20,8 @@ object Share {
     fun link(t: Track): String = when (t.source) {
         Source.YOUTUBE -> "https://music.youtube.com/watch?v=${t.id}"
         Source.ARCHIVE -> Regex("archive\\.org/download/([^/]+)").find(t.id)?.groupValues?.get(1)?.let { "https://archive.org/details/$it" } ?: t.id
+        // a server's songs are only for the friends it invited: the song looked up on YouTube Music instead
+        Source.SERVER -> "https://music.youtube.com/search?q=" + java.net.URLEncoder.encode("${t.artist} ${t.title}".trim(), "UTF-8")
     }
 
     fun name(t: Track) = "${t.artist} - ${t.title}".map { if (it in "/\\:*?\"<>|" || it.isISOControl()) '_' else it }.joinToString("").trim().take(120)

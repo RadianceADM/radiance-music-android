@@ -25,7 +25,7 @@ import javax.net.ssl.SSLException
  * A problem in the app's own plain words: [words] are said to you as they are;
  * [detail] (an HTTP code, a byte count) only goes to the log.
  */
-class Plain(val words: String, detail: String? = null) : Exception(if (detail == null) words else "$words ($detail)")
+open class Plain(val words: String, detail: String? = null) : Exception(if (detail == null) words else "$words ($detail)")
 
 /** Stops here with [words] (plain words, said to you as they are). */
 fun fail(words: String, detail: String? = null): Nothing = throw Plain(words, detail)
@@ -68,6 +68,36 @@ object Errors {
         if (chain.any { it is ExtractionException }) return YOUTUBE
         chain.firstNotNullOfOrNull { (it as? PlaybackException)?.let(::playback) }?.let { return it }
         return SOMETHING
+    }
+
+    /**
+     * Why a Radiance Music Server called [name] ("Bassi's server") didn't do
+     * what was asked, in plain words: the phone offline, the server not
+     * answering (off, or its address changed), too slow, not safe, or the
+     * server's own words (it says what's wrong itself: an invite used up, a
+     * switch the owner turned off, this phone removed).
+     */
+    @OptIn(UnstableApi::class)
+    fun server(e: Throwable?, name: String, offline: Boolean = !Connectivity.online.value): String {
+        val chain = chain(e)
+        if (offline && chain.any(::network)) return "You're offline. Connect to reach $name."
+        chain.firstNotNullOfOrNull { (it as? Plain)?.words }?.let { return it }
+        // the player's own request for a song there (it has no words of the server's)
+        chain.firstNotNullOfOrNull { (it as? HttpDataSource.InvalidResponseCodeException)?.responseCode }?.let { code ->
+            when (code) {
+                401 -> return "This phone isn't joined to $name any more. Ask its owner for a new invite."
+                404 -> return "That song isn't on $name any more."
+                in 500..599 -> return "$name isn't running right now, or it's starting. Try again in a minute."
+            }
+        }
+        return when (chain.firstOrNull { it is UnknownHostException || it is ConnectException || it is NoRouteToHostException || it is PortUnreachableException || it is InterruptedIOException || it is SSLException || it is SocketException }) {
+            is UnknownHostException -> "Can't find $name: its address doesn't lead anywhere now. Ask its owner if it changed."
+            is ConnectException, is NoRouteToHostException, is PortUnreachableException -> "$name isn't answering. It may be turned off; ask its owner."
+            is InterruptedIOException -> "$name is too slow to answer right now. Try again in a moment."
+            is SSLException -> "Couldn't reach $name safely. If this Wi-Fi has a sign-in page, sign in first."
+            is SocketException -> "The connection to $name dropped. Try again."
+            else -> say(e, offline)
+        }
     }
 
     /** It failed because the phone is offline (not for another reason that'd stay once it's back). */

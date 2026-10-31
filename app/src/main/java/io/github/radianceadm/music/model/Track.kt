@@ -1,14 +1,16 @@
 package io.github.radianceadm.music.model
 
 import org.json.JSONObject
+import java.security.MessageDigest
 import java.text.Normalizer
 
-enum class Source { ARCHIVE, YOUTUBE }
+/** Where a song comes from: the Internet Archive, YouTube Music, or a Radiance Music Server you joined. */
+enum class Source { ARCHIVE, YOUTUBE, SERVER }
 
 /** A song, wherever it comes from (as the desktop app's track.rs). */
 data class Track(
     val source: Source,
-    /** YouTube: the video id. Archive: the file's download URL. */
+    /** YouTube: the video id. Archive: the file's download URL. Server: the song's file there (https://HOST/files/NAME, no key in it). */
     val id: String,
     val title: String,
     val artist: String,
@@ -22,7 +24,12 @@ data class Track(
     /** Its saved music video (content:// in Movies/Radiance Music). */
     val video: String? = null,
 ) {
-    val key: String get() = if (source == Source.ARCHIVE) "ia:$id" else "yt:$id"
+    val key: String get() = when (source) {
+        Source.ARCHIVE -> "ia:$id"
+        Source.YOUTUBE -> "yt:$id"
+        // a server's file address can be long (its name, escaped): its key is short, and the same on every phone
+        Source.SERVER -> "rms:" + digest(id)
+    }
     val lossless: Boolean get() = source == Source.ARCHIVE
 
     /** What the player opens: the saved copy, the Archive's file, or "yt:ID" (found when it starts). */
@@ -31,7 +38,7 @@ data class Track(
     fun byline(): String = listOf(artist, album).filter { it.isNotBlank() }.joinToString(" · ")
 
     fun toJson(): JSONObject = JSONObject()
-        .put("source", if (source == Source.ARCHIVE) "archive" else "youtube")
+        .put("source", when (source) { Source.ARCHIVE -> "archive"; Source.YOUTUBE -> "youtube"; Source.SERVER -> "server" })
         .put("id", id).put("title", title).put("artist", artist).put("album", album)
         .put("seconds", seconds).put("art", art).put("format", format)
         .put("file", file ?: JSONObject.NULL).put("video", video ?: JSONObject.NULL)
@@ -41,6 +48,7 @@ data class Track(
             val source = when (o.optString("source")) {
                 "archive" -> Source.ARCHIVE
                 "youtube" -> Source.YOUTUBE
+                "server" -> Source.SERVER
                 else -> return null
             }
             val id = o.optString("id").ifEmpty { return null }
@@ -49,6 +57,10 @@ data class Track(
         }
     }
 }
+
+/** The first 16 hex digits of [text]'s SHA-256 (a short name that stays the same). */
+private fun digest(text: String): String =
+    MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).take(8).joinToString("") { "%02x".format(it) }
 
 /** Lowercase letters and digits only, without bracketed extras ("(Remastered)"). */
 fun plain(text: String): String {

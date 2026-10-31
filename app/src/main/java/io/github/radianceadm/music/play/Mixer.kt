@@ -3,6 +3,7 @@ package io.github.radianceadm.music.play
 import io.github.radianceadm.music.App
 import io.github.radianceadm.music.data.Import
 import io.github.radianceadm.music.model.Track
+import io.github.radianceadm.music.server.ServerSongs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -19,13 +20,15 @@ import kotlin.math.abs
  * split in six on the computer also plays its Piano and Guitar, with Other). The player
  * keeps playing the song itself, silently, and drives everything (the lock
  * screen, Bluetooth buttons, seeking, the next song); the parts follow it,
- * mixed by PartsEngine. Your mix stays from song to song.
+ * mixed by PartsEngine. Your mix stays from song to song. A song from a
+ * Radiance Music Server split there plays its parts fetched from the server
+ * (ServerSongs), the same way.
  */
 class Mixer(private val app: App) {
     private val _gains = MutableStateFlow(PARTS.associateWith { 1f })
     val gains: StateFlow<Map<String, Float>> = _gains
 
-    /** The song playing has its parts on this phone. */
+    /** The song playing has its parts on this phone (split here, copied, or fetched from its server). */
     private val _available = MutableStateFlow(false)
     val available: StateFlow<Boolean> = _available
 
@@ -33,24 +36,30 @@ class Mixer(private val app: App) {
     private var engine: PartsEngine? = null
     private var watch: Job? = null
     private var song: String? = null
+    private var track: Track? = null
 
     private fun allUp() = _gains.value.values.all { it >= 0.999f }
+
+    /** The song's parts here: split here or copied, else fetched from its server; empty: none. */
+    private fun partsOf(t: Track): Map<String, java.io.File> =
+        Import.parts(app, t.key).takeIf { it.keys.containsAll(PARTS) } ?: ServerSongs.parts(app, t)
 
     /** The song playing changed: the parts for it, if it's mixed. */
     fun songChanged(t: Track?) {
         if (t?.key == song) return
         stop()
         song = t?.key
-        _available.value = t != null && Import.parts(app, t.key).keys.containsAll(PARTS)
+        track = t
+        _available.value = t != null && partsOf(t).keys.containsAll(PARTS)
         if (_available.value && !allUp()) engage()
     }
 
-    /** A split just finished: the song playing may have its parts now. */
+    /** A split just finished (or a server's parts came): the song playing may have its parts now. */
     fun recheck() {
         scope.launch {
             val t = app.player.current.value ?: return@launch
             if (t.key != song || _available.value) return@launch
-            _available.value = Import.parts(app, t.key).keys.containsAll(PARTS)
+            _available.value = partsOf(t).keys.containsAll(PARTS)
             if (_available.value && !allUp()) engage()
         }
     }
@@ -74,8 +83,8 @@ class Mixer(private val app: App) {
     fun seeked(ms: Long) = engine?.seek(ms)
 
     private fun engage() {
-        val key = song ?: return
-        val files = Import.parts(app, key)
+        val t = track ?: return
+        val files = partsOf(t)
         if (!files.keys.containsAll(PARTS)) return
         val hub = app.player
         // split in six on the computer: Piano and Guitar play too, moving with Other (the song stays whole)

@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import io.github.radianceadm.music.App
 import io.github.radianceadm.music.data.Import
+import io.github.radianceadm.music.server.Servers
 import io.github.radianceadm.music.split.Setup
 
 class MainActivity : ComponentActivity() {
@@ -95,6 +96,8 @@ private fun Radiance() {
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
     var nowPlaying by rememberSaveable { mutableStateOf(false) }
     var settings by rememberSaveable { mutableStateOf(false) }
+    // the listening party's screen (you're in one): the mini player opens it in place of Now Playing
+    var party by rememberSaveable { mutableStateOf(false) }
     val ctx = LocalContext.current
     // how to use it: the first time the app opens (under the start's splash, seen as it opens)
     var guide by rememberSaveable { mutableStateOf(Guide.due(ctx)) }
@@ -104,7 +107,7 @@ private fun Radiance() {
             bottomBar = {
                 Column {
                     OfflinePill() // offline: a small pill over the song playing
-                    MiniPlayer(onOpen = { nowPlaying = true })
+                    MiniPlayer(onOpen = { if (App.instance.party.joined) party = true else nowPlaying = true })
                     NavigationBar(containerColor = Brand.Night) {
                         Tab.entries.forEach { t ->
                             NavigationBarItem(
@@ -122,14 +125,22 @@ private fun Radiance() {
             when (tab) {
                 Tab.Home -> HomeScreen(pad, onSearch = { tab = Tab.Search }, onSettings = { settings = true })
                 Tab.Search -> SearchScreen(pad)
-                Tab.Library -> LibraryScreen(pad, onSettings = { settings = true })
+                Tab.Library -> LibraryScreen(pad, onSettings = { settings = true }, onParty = { party = true })
             }
         }
         AnimatedVisibility(nowPlaying, enter = slideInVertically { it }, exit = slideOutVertically { it }) {
             NowPlayingScreen(onClose = { nowPlaying = false })
         }
         AnimatedVisibility(settings, enter = slideInHorizontally { it }, exit = slideOutHorizontally { it }) {
-            SettingsScreen(onClose = { settings = false }, onGuide = { guide = true })
+            SettingsScreen(onClose = { settings = false }, onGuide = { guide = true }, onOpenServer = { s ->
+                // its library, in Library
+                Servers.open.value = s.base
+                tab = Tab.Library
+                settings = false
+            })
+        }
+        AnimatedVisibility(party, enter = slideInVertically { it }, exit = slideOutVertically { it }) {
+            PartyScreen(onClose = { party = false })
         }
         Notices() // what to tell you (in place of toasts), at the top, over every screen
         if (guide) GuideScreen(onDone = { Guide.seen(ctx); guide = false })

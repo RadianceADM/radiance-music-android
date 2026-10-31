@@ -22,6 +22,8 @@ object Http {
     val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
+        // a Radiance Music Server you joined gets this phone's key with everything asked of it (covers, downloads)
+        .addInterceptor(io.github.radianceadm.music.server.Servers.auth)
         .build()
 
     private fun url(base: String, query: Map<String, String>) =
