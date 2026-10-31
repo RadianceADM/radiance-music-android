@@ -141,7 +141,7 @@ private fun Radiance() {
         AnimatedVisibility(settings, enter = slideInHorizontally { it }, exit = slideOutHorizontally { it }) {
             SettingsScreen(onClose = { settings = false }, onGuide = { guide = true }, onOpenServer = { s ->
                 // its library, in Library
-                Servers.open.value = s.base
+                Servers.open.value = s.first
                 tab = Tab.Library
                 settings = false
             })

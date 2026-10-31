@@ -21,7 +21,9 @@ import java.util.concurrent.ConcurrentHashMap
  * is, this phone's key for it, its name ("Bassi's server"), who you are
  * there and what its owner lets you do (as last heard). Its [id] is its own,
  * the same at any address: the owner adding a domain moves it, it doesn't
- * make it another server.
+ * make it another server. As the computer app does, its songs keep the
+ * address it was [first] joined at in their ids (so their keys never change);
+ * what's asked of it goes to [base], where it is now.
  */
 data class Server(
     /** "https://music.example.com" (or "http://203.0.113.5:8080"). */
@@ -35,19 +37,24 @@ data class Server(
     val joinedMs: Long = 0,
     /** The server's own id (from 0.1.2; null: not heard yet). */
     val id: String? = null,
+    /** Where it was when this phone joined it: its songs' addresses keep it. */
+    val first: String = base,
 ) {
-    val rms get() = Rms(base, token)
+    val rms get() = Rms(base, token, first = first)
+
+    /** One of its addresses (a song's id: at the address first joined) where it is now. */
+    fun here(url: String): String = if (first != base && url.startsWith("$first/")) base + url.removePrefix(first) else url
     /** Its address as you'd say it: "music.example.com". */
     val host get() = base.substringAfter("://")
 
     fun toJson(): JSONObject = JSONObject().put("base", base).put("token", token).put("name", name)
-        .put("me", me?.toJson() ?: JSONObject.NULL).put("device", device).put("can", can.toJson()).put("joined_ms", joinedMs).put("id", id ?: JSONObject.NULL)
+        .put("me", me?.toJson() ?: JSONObject.NULL).put("device", device).put("can", can.toJson()).put("joined_ms", joinedMs).put("id", id ?: JSONObject.NULL).put("first_address", first)
 
     companion object {
         fun from(o: JSONObject): Server? {
             val base = o.str("base") ?: return null
             val token = o.str("token") ?: return null
-            return Server(base, token, o.str("name") ?: base.substringAfter("://"), Person.from(o.optJSONObject("me")), o.optLong("device"), Can.from(o.optJSONObject("can")), o.optLong("joined_ms"), o.str("id"))
+            return Server(base, token, o.str("name") ?: base.substringAfter("://"), Person.from(o.optJSONObject("me")), o.optLong("device"), Can.from(o.optJSONObject("can")), o.optLong("joined_ms"), o.str("id"), o.str("first_address") ?: base)
         }
     }
 }
@@ -89,14 +96,7 @@ object Servers {
     /** An invite opened from outside (the server's join page: radiancemusic://join?u=…): Settings → Servers asks to join it. */
     val asked = MutableStateFlow<String?>(null)
 
-    /**
-     * A server moved ([old] address → [new]): the app's songs from it follow
-     * (App: the library, the files kept by a song's key). Called before the
-     * move is kept.
-     */
-    @Volatile var onMoved: ((old: String, new: String) -> Unit)? = null
-
-    /** Songs each server had when last asked, by the song's key: for the Mixer's parts, the lyrics, saving. */
+    /** Songs each server had when last asked, by the song's key (and the server's first address): for the Mixer's parts, the lyrics, saving. */
     private val songs = ConcurrentHashMap<String, Pair<String, ServerSong>>()
     /** Each server's list as last asked (its library shows it at once, then looks again). */
     private val lists = ConcurrentHashMap<String, List<ServerSong>>()
@@ -124,37 +124,49 @@ object Servers {
 
     fun byBase(base: String): Server? = _list.value.firstOrNull { it.base == base }
 
-    /** The joined server [url] is on (its scheme, host and port), if it's one. */
+    /** The joined server first joined at [first] (wherever it is now). */
+    fun byFirst(first: String): Server? = _list.value.firstOrNull { it.first == first }
+
+    /** The joined server [url] is on (its scheme, host and port, where it is now or was first joined), if it's one. */
     fun of(url: String): Server? = url.toHttpUrlOrNull()?.let(::of)
 
     private fun of(u: HttpUrl): Server? {
         val list = _list.value
         if (list.isEmpty()) return null
         val origin = Rms.origin(u.toString()) ?: return null
-        return list.firstOrNull { it.base == origin }
+        return list.firstOrNull { it.base == origin } ?: list.firstOrNull { it.first == origin }
     }
+
+    /** [url] where it is now (a song's address keeps the server's first one). */
+    fun here(url: String): String = of(url)?.here(url) ?: url
 
     /** The server a song came from (a server's song: its file's address). */
     fun of(t: Track): Server? = if (t.source == Source.SERVER) of(t.id) else null
 
     /**
-     * A joined server's files (covers, downloads, parts) carry its key, unless
-     * they have one already; the API's calls carry their own (Rms). Other
+     * A joined server's files (covers, downloads, parts) go to where it is now
+     * (a song's address keeps its first one) and carry its key, unless they
+     * have one already; the API's calls carry their own (Rms). Other
      * addresses are left alone.
      */
     val auth = Interceptor { chain ->
         val req = chain.request()
-        val file = req.url.encodedPath.startsWith("/files/")
-        val s = if (file && req.header("Authorization") == null && req.url.queryParameter("t") == null) of(req.url) else null
-        chain.proceed(if (s == null) req else req.newBuilder().header("Authorization", "Bearer ${s.token}").build())
+        val s = if (req.url.encodedPath.startsWith("/files/")) of(req.url) else null
+        if (s == null) return@Interceptor chain.proceed(req)
+        val asked = req.url.toString()
+        val b = req.newBuilder()
+        s.here(asked).takeIf { it != asked }?.let { b.url(it) }
+        if (req.header("Authorization") == null && req.url.queryParameter("t") == null) b.header("Authorization", "Bearer ${s.token}")
+        chain.proceed(b.build())
     }
 
-    /** A joined server's file address with this phone's key in it (`?t=`), for the player; any other address as it is. */
+    /** A joined server's file address where it is now, with this phone's key in it (`?t=`), for the player; any other address as it is. */
     fun sign(url: String): String {
         val u = url.toHttpUrlOrNull() ?: return url
-        if (!u.encodedPath.startsWith("/files/") || u.queryParameter("t") != null) return url
+        if (!u.encodedPath.startsWith("/files/")) return url
         val s = of(u) ?: return url
-        return u.newBuilder().setQueryParameter("t", s.token).build().toString()
+        val now = s.here(url).toHttpUrlOrNull() ?: return url
+        return if (now.queryParameter("t") != null) now.toString() else now.newBuilder().setQueryParameter("t", s.token).build().toString()
     }
 
     /** This phone as the server lists it: its maker and model ("Samsung SM-S928B"). */
@@ -201,22 +213,29 @@ object Servers {
      * Joins the server in [text] (an invite's link or QR) as this phone:
      * its key, its name, who you are there. Waits for the network. Joined
      * there already: the new key takes the old one's place (and the old one
-     * is given back).
+     * is given back). As the computer app does: the same server (its id) at a
+     * new address moves there, keeping its first address for its songs; its
+     * key still working there, the invite isn't used.
      */
     fun join(text: String, deviceName: String = deviceName()): Server {
         val inv = invite(text) ?: fail("That isn't an invite. It looks like https://music.example.com/join/ABCD-EFGH-JKLM: paste the whole link, or scan its QR.")
+        val status = runCatching { Rms(inv.base).status() }.getOrNull()
+        val known = byBase(inv.base) ?: status?.id?.let { i -> _list.value.firstOrNull { it.id == i } }
+        // the same server at a new address, and this phone's key works there: it moves, the invite stays unused
+        if (known != null && known.base != inv.base) {
+            val there = runCatching { Rms(inv.base, known.token).me() }.getOrNull()
+            if (there != null) return moved(known, known.copy(base = inv.base, name = there.server ?: status?.server ?: known.name, me = there.person, can = there.can, id = known.id ?: there.serverId))
+        }
         val joined = Rms(inv.base).join(inv.code, deviceName)
         val rms = Rms(inv.base, joined.token)
         val me = runCatching { rms.me() }.getOrNull()
-        val status = if (joined.server == null || (joined.serverId ?: me?.serverId) == null) runCatching { rms.status() }.getOrNull() else null
         val name = joined.server ?: me?.server ?: status?.server ?: inv.base.substringAfter("://")
         val id = joined.serverId ?: me?.serverId ?: status?.id
-        val server = Server(inv.base, joined.token, name, me?.person ?: joined.person, me?.device ?: joined.device, me?.can ?: Can(), System.currentTimeMillis(), id)
-        // joined here already (a new invite for this phone), or the same server at its new address: the old key goes, the new one takes its place
-        val before = byBase(inv.base) ?: id?.let { i -> _list.value.firstOrNull { it.id == i } }
-        if (before != null && before.token != joined.token) runCatching { Rms(inv.base, before.token).leave(before.device) }
-        if (before != null && before.base != inv.base) moved(before.base, inv.base)
-        save(if (before == null) _list.value + server else _list.value.map { if (it === before) server else it })
+        val server = Server(inv.base, joined.token, name, me?.person ?: joined.person, me?.device ?: joined.device, me?.can ?: Can(), System.currentTimeMillis(), id, first = known?.first ?: inv.base)
+        // joined here already (a new invite for this phone): the old key goes, the new one takes its place
+        if (known != null && known.token != joined.token) runCatching { Rms(inv.base, known.token).leave(known.device) }
+        if (known != null && known.base != inv.base) return moved(known, server)
+        save(if (known == null) _list.value + server else _list.value.map { if (it === known) server else it })
         healthy(server.base, Health.Answering)
         return server
     }
@@ -234,27 +253,20 @@ object Servers {
         val id = there.status().id
         if (s.id == null || id != s.id) fail("That's another server, not ${s.name}. Check the address with ${ownerOf(s)}.")
         val me = there.me()
-        val now = s.copy(base = base, name = me.server ?: s.name, me = me.person, can = me.can)
-        moved(s.base, base)
-        save(_list.value.map { if (it.base == s.base) now else it })
-        healthy(base, Health.Answering)
-        return now
-    }
-
-    /** The songs, caches and screens following a server from [old] to [new]. */
-    private fun moved(old: String, new: String) {
-        runCatching { onMoved?.invoke(old, new) }
-        _health.value = _health.value - old
-        songs.entries.removeIf { it.value.first == old }
-        lists.remove(old)
-        if (open.value == old) open.value = new
+        return moved(s, s.copy(base = base, name = me.server ?: s.name, me = me.person, can = me.can))
     }
 
     /**
-     * A server song's address at [new] in place of [old] (the same file there):
-     * null when [url] isn't one of [old]'s.
+     * [was] is [now] (at its new address, its first one kept): in its place.
+     * Its songs' keys don't change, so nothing else does; what's fetched goes
+     * to its new address (Server.here).
      */
-    fun rebased(url: String, old: String, new: String): String? = if (url.startsWith("$old/")) new + url.removePrefix(old) else null
+    private fun moved(was: Server, now: Server): Server {
+        save(_list.value.map { if (it.first == was.first) now else it })
+        _health.value = _health.value - was.base
+        healthy(now.base, Health.Answering)
+        return now
+    }
 
     /**
      * Leaves [s]: this phone's key stops working there ([onServer]), and the
@@ -267,11 +279,11 @@ object Servers {
             // already removed there: nothing to give back
             if (gone != null && !(gone is Refused && gone.removed)) throw gone
         }
-        save(_list.value.filterNot { it.base == s.base })
+        save(_list.value.filterNot { it.first == s.first })
         _health.value = _health.value - s.base
-        songs.entries.removeIf { it.value.first == s.base }
-        lists.remove(s.base)
-        if (open.value == s.base) open.value = null
+        songs.entries.removeIf { it.value.first == s.first }
+        lists.remove(s.first)
+        if (open.value == s.first) open.value = null
     }
 
     /** Asks [s] who this phone is now (its name, what the owner lets it do): kept, and how it answered. */
@@ -283,7 +295,7 @@ object Servers {
             throw e
         }
         val now = s.copy(name = me.server ?: s.name, me = me.person, device = me.device.takeIf { it > 0 } ?: s.device, can = me.can, id = s.id ?: me.serverId)
-        if (now != s) save(_list.value.map { if (it.base == s.base) now else it })
+        if (now != s) save(_list.value.map { if (it.first == s.first) now else it })
         healthy(s.base, Health.Answering)
         return now
     }
@@ -320,18 +332,18 @@ object Servers {
     }
 
     fun remember(s: Server, list: List<ServerSong>, whole: Boolean = true) {
-        if (whole) lists[s.base] = list
-        for (song in list) songs[song.track().key] = s.base to song
+        if (whole) lists[s.first] = list
+        for (song in list) songs[song.track().key] = s.first to song
     }
 
     /** [s]'s songs as last asked, or null (not asked yet). */
-    fun lastSongs(s: Server): List<ServerSong>? = lists[s.base]
+    fun lastSongs(s: Server): List<ServerSong>? = lists[s.first]
 
     /** A server's song as last listed (by the song's key), with its server. */
     fun song(t: Track): Pair<Server, ServerSong>? {
         if (t.source != Source.SERVER) return null
-        val (base, song) = songs[t.key] ?: return null
-        return byBase(base)?.let { it to song }
+        val (first, song) = songs[t.key] ?: return null
+        return byFirst(first)?.let { it to song }
     }
 
     /**
@@ -355,8 +367,8 @@ object Servers {
             heard(s, e)
             throw e
         }
-        songs[song.track().key] = s.base to song
-        lists[s.base]?.let { list -> lists[s.base] = list.map { if (it.id == id) song else it } }
+        songs[song.track().key] = s.first to song
+        lists[s.first]?.let { list -> lists[s.first] = list.map { if (it.id == id) song else it } }
         return song
     }
 
@@ -369,7 +381,7 @@ object Servers {
             throw e
         }
         healthy(s.base, Health.Answering)
-        for (song in page.songs) songs[song.track().key] = s.base to song
+        for (song in page.songs) songs[song.track().key] = s.first to song
         return page
     }
 }

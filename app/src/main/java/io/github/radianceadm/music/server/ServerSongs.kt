@@ -119,21 +119,6 @@ object ServerSongs {
         return lyricsText(song)?.let { LyricsFinder.fromFile(it) }?.takeIf { it !is Lyrics.None }
     }
 
-    /**
-     * A server moved from [old] to [new]: your songs from it follow (Library),
-     * and what's kept by each song's key (its cover, its lyrics, its parts)
-     * goes under its new key.
-     */
-    fun rebase(app: App, old: String, new: String) {
-        for ((was, now) in app.library.rebase(old, new)) {
-            if (was.key == now.key) continue
-            Saver.coverFile(app, was).takeIf { it.exists() }?.renameTo(Saver.coverFile(app, now))
-            Saver.lyricsFile(app, was).takeIf { it.exists() }?.renameTo(Saver.lyricsFile(app, now))
-            for ((part, f) in Splitter.parts(app, was.key)) f.renameTo(Splitter.partFileFor(app, now.key, part, f.extension))
-            File(cache(app), safe(was.key)).takeIf { it.exists() }?.renameTo(File(cache(app), safe(now.key)))
-        }
-    }
-
     // ── parts for the Mixer, from the server ──
 
     private fun safe(key: String) = key.map { if (it.isLetterOrDigit()) it else '_' }.joinToString("")

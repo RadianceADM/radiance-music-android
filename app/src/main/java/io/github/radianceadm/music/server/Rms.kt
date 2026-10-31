@@ -36,10 +36,17 @@ class Refused(val code: Int, words: String) : Plain(words, "HTTP $code") {
  * underneath (no screens), so it's tested on a computer against a pretend
  * server and the real one. Every call waits for the network: never on the
  * main thread.
+ *
+ * What's asked goes to [base], where the server is now; the songs' own
+ * addresses (their ids, so their keys) keep [first], where it was first
+ * joined, as the computer app does: a server given a domain keeps its songs'
+ * keys (Servers swaps the address back as they're fetched).
  */
-class Rms(base: String, val token: String? = null, private val client: OkHttpClient = Http.client) {
+class Rms(base: String, val token: String? = null, private val client: OkHttpClient = Http.client, first: String? = null) {
     /** "https://music.example.com" (its scheme, host and port; nothing after). */
     val base: String = origin(base) ?: base.trimEnd('/')
+    /** Where it was first joined (its songs' addresses keep it). */
+    val first: String = first?.let { origin(it) ?: it.trimEnd('/') } ?: this.base
 
     // ── people ──
 
@@ -76,12 +83,12 @@ class Rms(base: String, val token: String? = null, private val client: OkHttpCli
         }.build().toString()
         val o = get(url)
         val list = o.optJSONArray("songs") ?: JSONArray()
-        val songs = (0 until list.length()).mapNotNull { list.optJSONObject(it)?.let { s -> ServerSong.from(s, ::file) } }
+        val songs = (0 until list.length()).mapNotNull { list.optJSONObject(it)?.let { s -> ServerSong.from(s, ::id) } }
         return Page(songs, o.optInt("total", songs.size), o.optInt("offset", offset))
     }
 
     /** One song, by its id (as it is now: split meanwhile, its lyrics timed…). */
-    fun song(id: Long): ServerSong = ServerSong.from(get("/api/songs/$id"), ::file) ?: throw Refused(500, "The server's answer about that song didn't make sense.")
+    fun song(id: Long): ServerSong = ServerSong.from(get("/api/songs/$id"), ::id) ?: throw Refused(500, "The server's answer about that song didn't make sense.")
 
     /**
      * A song split on this phone brings its [parts] (drums, bass, other,
@@ -96,7 +103,7 @@ class Rms(base: String, val token: String? = null, private val client: OkHttpCli
             .apply { lyrics?.let { addFormDataPart("lyrics", it.name, it.body(counted)) } }
             .build()
         val slow = client.newBuilder().writeTimeout(0, TimeUnit.SECONDS).readTimeout(5, TimeUnit.MINUTES).build()
-        return PartsAdded.from(call(request("/api/songs/$song/parts").post(form).build(), slow), ::file)
+        return PartsAdded.from(call(request("/api/songs/$song/parts").post(form).build(), slow), ::id)
     }
 
     /**
@@ -121,7 +128,7 @@ class Rms(base: String, val token: String? = null, private val client: OkHttpCli
             .build()
         // a big song on a slow connection: no time limit while it goes
         val slow = client.newBuilder().writeTimeout(0, TimeUnit.SECONDS).readTimeout(5, TimeUnit.MINUTES).build()
-        return Uploaded.from(call(request("/api/songs").post(form).build(), slow), ::file)
+        return Uploaded.from(call(request("/api/songs").post(form).build(), slow), ::id)
     }
 
     /** A file to send: its name, its size (-1: not known) and how to read it. */
@@ -161,16 +168,16 @@ class Rms(base: String, val token: String? = null, private val client: OkHttpCli
     /** The server's clock (ms since 1970), for clock-offset pings (no key needed). */
     fun time(): Long = get("/api/time", auth = false).getLong("now_ms")
 
-    fun party(): PartyState = PartyState.from(get("/api/party"), ::file)
-    fun startParty(everyoneControls: Boolean): PartyState = PartyState.from(post("/api/party/start", JSONObject().put("everyone_controls", everyoneControls)), ::file)
-    fun addToParty(song: Long): PartyState = PartyState.from(post("/api/party/add", JSONObject().put("song", song)), ::file)
+    fun party(): PartyState = PartyState.from(get("/api/party"), ::id)
+    fun startParty(everyoneControls: Boolean): PartyState = PartyState.from(post("/api/party/start", JSONObject().put("everyone_controls", everyoneControls)), ::id)
+    fun addToParty(song: Long): PartyState = PartyState.from(post("/api/party/add", JSONObject().put("song", song)), ::id)
 
     /** play, pause, skip, seek {position_ms}, reorder {entry, to}, remove {entry}, allow {everyone}. */
     fun control(action: String, extra: JSONObject = JSONObject()): PartyState =
-        PartyState.from(post("/api/party/control", extra.put("action", action)), ::file)
+        PartyState.from(post("/api/party/control", extra.put("action", action)), ::id)
 
-    fun react(emoji: String): PartyState = PartyState.from(post("/api/party/react", JSONObject().put("emoji", emoji)), ::file)
-    fun endParty(): PartyState = PartyState.from(post("/api/party/end", JSONObject()), ::file)
+    fun react(emoji: String): PartyState = PartyState.from(post("/api/party/react", JSONObject().put("emoji", emoji)), ::id)
+    fun endParty(): PartyState = PartyState.from(post("/api/party/end", JSONObject()), ::id)
 
     /** The party's WebSocket: its whole state on every change (`?t=` carries the key: a WebSocket can't take a header everywhere). */
     fun partySocket(listener: WebSocketListener): WebSocket = socket("/api/party/ws", listener)
@@ -185,7 +192,10 @@ class Rms(base: String, val token: String? = null, private val client: OkHttpCli
 
     // ── addresses ──
 
-    /** A file's address on the server ("/files/…") made whole: https://HOST/files/…. */
+    /** A song's or its file's address as the app keeps it ("/files/…" at the address first joined): its id. */
+    fun id(path: String): String = if (path.startsWith("http://") || path.startsWith("https://")) path else first + (if (path.startsWith("/")) path else "/$path")
+
+    /** An address on the server where it is now ("/api/…" made whole). */
     fun file(path: String): String = if (path.startsWith("http://") || path.startsWith("https://")) path else base + (if (path.startsWith("/")) path else "/$path")
 
     /** [url] with this phone's key in it (`?t=`), for what can't send a header (a player, a picture). */

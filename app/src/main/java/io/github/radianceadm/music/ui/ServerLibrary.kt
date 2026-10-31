@@ -82,6 +82,7 @@ import io.github.radianceadm.music.net.Errors
 import io.github.radianceadm.music.server.Events
 import io.github.radianceadm.music.server.Job
 import io.github.radianceadm.music.server.PartyState
+import io.github.radianceadm.music.server.Person
 import io.github.radianceadm.music.server.Queue
 import io.github.radianceadm.music.server.Refused
 import io.github.radianceadm.music.server.Server
@@ -170,23 +171,28 @@ fun ServerLibrary(pad: PaddingValues, server: Server, header: @Composable () -> 
                     val gone = withContext(Dispatchers.IO) { runCatching { Servers.refresh(server) }.exceptionOrNull() }
                     if (gone is Refused && gone.removed) ui = ui.copy(removed = removed)
                 }
+                // a party started or ended: its card asks once for the rest (who's in it, what's playing)
+                is Events.Event.Party -> {
+                    ui = ui.copy(party = if (e.on) (ui.party?.takeIf { it.on } ?: PartyState(on = true, host = e.host?.let { Person(0, it) })) else PartyState.OFF)
+                    if (e.on) withContext(Dispatchers.IO) { runCatching { server.rms.party() }.getOrNull() }?.let { ui = ui.copy(party = it) }
+                }
                 is Events.Event.Hello -> Unit
             }
         }
     }
-    // the party (the events line doesn't carry it) now and then; the queue, and the songs when a split finished, only while the line is down
+    // the party and the queue once (and again whenever the line comes back up); while it's down, now and then, and the songs when a split finished
     LaunchedEffect(server.base, poke, live) {
         var working = ui.queue?.jobs?.filter { it.open }?.map { it.id }?.toSet() ?: emptySet()
-        var first = true
         while (isActive) {
             val party = withContext(Dispatchers.IO) { runCatching { server.rms.party() }.getOrNull() }
-            val queue = if (!live || first) withContext(Dispatchers.IO) { runCatching { server.rms.queue() }.getOrNull() } else null
+            val queue = withContext(Dispatchers.IO) { runCatching { server.rms.queue() }.getOrNull() }
             ui = ui.copy(party = party ?: ui.party, queue = queue ?: ui.queue)
             val open = queue?.jobs?.filter { it.open }?.map { it.id }?.toSet() ?: working
             if (!live && (working - open).isNotEmpty()) tries++
             working = open
-            first = false
-            delay(if (live) 30_000 else if (open.isNotEmpty()) 4_000 else 15_000)
+            // up: its changes come by themselves (nothing asked again)
+            if (live) break
+            delay(if (open.isNotEmpty()) 4_000 else 15_000)
         }
     }
     // back online: it looks again

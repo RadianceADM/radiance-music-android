@@ -1,7 +1,6 @@
 package io.github.radianceadm.music.data
 
 import android.content.Context
-import io.github.radianceadm.music.model.Source
 import io.github.radianceadm.music.model.Track
 import io.github.radianceadm.music.model.fold
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -66,35 +65,6 @@ class Library(context: Context) {
         val tracks = (0 until q.length()).mapNotNull { Track.fromJson(q.getJSONObject(it)) }.map { best(it) }
         Triple(tracks, o.optInt("index"), o.optLong("position"))
     }.getOrNull()?.takeIf { it.first.isNotEmpty() }
-
-    /**
-     * A Radiance Music Server moved from [old] to [new] (its owner added a
-     * domain): its songs here follow it. A server song's address (so its key)
-     * changes with it; the songs as they were and as they are now come back,
-     * for what's kept by their key (covers, lyrics, parts).
-     */
-    fun rebase(old: String, new: String): List<Pair<Track, Track>> {
-        val moved = LinkedHashMap<String, Pair<Track, Track>>()
-        fun move(t: Track): Track {
-            if (t.source != Source.SERVER || !t.id.startsWith("$old/")) return t
-            val now = t.copy(id = new + t.id.removePrefix(old), art = if (t.art.startsWith("$old/")) new + t.art.removePrefix(old) else t.art)
-            moved.putIfAbsent(t.key, t to now)
-            return now
-        }
-        _liked.value = _liked.value.map(::move).sortedWith(byTitle)
-        save("liked.json", _liked.value)
-        _history.value = _history.value.map(::move)
-        save("history.json", _history.value)
-        // where you left off, too
-        runCatching {
-            val f = File(dir, "session.json")
-            val o = JSONObject(f.readText())
-            val q = o.getJSONArray("queue")
-            val tracks = (0 until q.length()).mapNotNull { Track.fromJson(q.getJSONObject(it)) }.map(::move)
-            f.writeText(o.put("queue", JSONArray(tracks.map { it.toJson() })).toString())
-        }
-        return moved.values.toList()
-    }
 
     private fun load(name: String): List<Track> = runCatching {
         val a = JSONArray(File(dir, name).readText())

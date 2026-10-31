@@ -280,7 +280,8 @@ fun LibraryScreen(pad: PaddingValues, onSettings: () -> Unit, onParty: () -> Uni
             Servers.open.value = null
         }
     }
-    val server = servers.firstOrNull { it.base == picked }
+    // (a server's pill is its first address: the same after it moves)
+    val server = servers.firstOrNull { it.first == picked }
     // a server left meanwhile: back to Liked Songs
     val tab = when {
         picked == HISTORY -> 1
@@ -291,7 +292,7 @@ fun LibraryScreen(pad: PaddingValues, onSettings: () -> Unit, onParty: () -> Uni
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Chip("Liked Songs", App.instance.library.liked.collectAsState().value.size.takeIf { it > 0 }, tab == 0) { picked = LIKED }
             Chip("History", null, tab == 1) { picked = HISTORY }
-            servers.forEach { s -> Chip(s.name, null, s.base == server?.base) { picked = s.base } }
+            servers.forEach { s -> Chip(s.name, null, s.first == server?.first) { picked = s.first } }
         }
     }
     if (server != null) {

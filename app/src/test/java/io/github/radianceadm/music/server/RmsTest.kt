@@ -51,7 +51,6 @@ class RmsTest {
     @After fun stop() {
         server.close()
         Servers.pretend(emptyList())
-        Servers.onMoved = null
         Events.firstBackoff = 1000
     }
 
@@ -70,9 +69,12 @@ class RmsTest {
     """.trimIndent()
 
     @Test fun joinsWithAnInvite() {
+        server.enqueue(json("""{"server": "Bassi's server", "id": "srv-1", "needs_setup": false}"""))
         server.enqueue(json("""{"token": "tok-123", "person": {"id": 2, "name": "Ana", "role": "friend"}, "device": {"id": 5, "name": "Samsung SM-S928B"}, "server": {"name": "Bassi's server"}}""", 201))
         server.enqueue(json("""{"person": {"id": 2, "name": "Ana", "role": "friend"}, "device": {"id": 5, "name": "Samsung SM-S928B"}, "server": {"name": "Bassi's server"}, "can": {"add": true, "split": false, "host": true}}"""))
         val s = Servers.join("Join my server: $base/join/ABCD-EFGH-JKLM", deviceName = "Samsung SM-S928B")
+        // which server it is first (its id: the same server at another address moves, as the computer app does)
+        assertEquals("/api/status", server.takeRequest().url.encodedPath)
         val join = server.takeRequest()
         assertEquals("POST", join.method)
         assertEquals("/api/join", join.url.encodedPath)
@@ -94,9 +96,12 @@ class RmsTest {
         assertEquals(Can(add = true, split = false, host = true), s.can)
         assertEquals(listOf(s), Servers.list.value)
         assertEquals("Bassi", Servers.ownerOf(s))
+        assertEquals("srv-1", s.id)
+        assertEquals(base, s.first)
     }
 
     @Test fun anInviteUsedUpSaysSoInTheServersWords() {
+        server.enqueue(json("""{"server": "Bassi's server", "id": "srv-1", "needs_setup": false}"""))
         server.enqueue(json("""{"error": "That invite was used already: each one works once. Ask the server's owner for a new one."}""", 410))
         try {
             Servers.join("$base/join/ABCD-EFGH-JKLM")
@@ -358,11 +363,17 @@ class RmsTest {
     @Test fun theServersChangesComeAsTheyHappen() = kotlinx.coroutines.runBlocking {
         val s = Server(base, "tok-ev", "Bassi's server", id = "srv-1")
         Servers.pretend(listOf(s))
-        server.enqueue(upgrade("""{"type": "hello", "server": {"id": "srv-1", "name": "Bassi's server"}}""", """{"type": "library"}""", queueEvent, """{"type": "me"}"""))
+        server.enqueue(upgrade(
+            """{"type": "hello", "server": {"id": "srv-1", "name": "Bassi's server"}}""", """{"type": "library"}""", queueEvent, """{"type": "me"}""",
+            """{"type": "party", "on": true, "host": "Bassi"}""", """{"type": "something new"}""", """{"type": "party", "on": false, "host": null}""",
+        ))
         val ups = mutableListOf<Boolean>()
-        val got = kotlinx.coroutines.withTimeout(5_000) { Events.watch(s).onEach { ups += Events.up(s.base).value }.take(4).toList() }
+        val got = kotlinx.coroutines.withTimeout(5_000) { Events.watch(s).onEach { ups += Events.up(s.base).value }.take(6).toList() }
         // up while it listened: the screens don't look again by themselves meanwhile
-        assertEquals(listOf(true, true, true, true), ups)
+        assertEquals(List(6) { true }, ups)
+        // a party on, then off (the kind it doesn't know passed over): the party card needn't ask
+        assertEquals(Events.Event.Party(true, "Bassi"), got[4])
+        assertEquals(Events.Event.Party(false, null), got[5])
         assertEquals(Events.Event.Hello("srv-1", "Bassi's server"), got[0])
         assertEquals(Events.Event.Library, got[1])
         val q = (got[2] as Events.Event.Queued).queue
@@ -457,48 +468,75 @@ class RmsTest {
         assertNull(Servers.joinLink(invite))
     }
 
-    @Test fun theSameServerAtANewAddressMovesNotAnother() {
-        // two addresses for the one pretend server: 127.0.0.1 and localhost
+    @Test fun theSameServerAtANewAddressMovesAndItsSongsKeepTheirKeys() {
+        // two addresses for the one pretend server: 127.0.0.1 (where it was joined) and localhost (its new one)
         val port = server.port
         val old = "http://127.0.0.1:$port"
         val new = "http://localhost:$port"
         val s = Server(old, "tok-old", "Bassi's server", Person(2, "Ana"), device = 5, id = "srv-1")
-        Servers.pretend(listOf(Server("https://other.example", "t9", "Rad's server", id = "srv-9"), s))
-        val moves = mutableListOf<Pair<String, String>>()
-        Servers.onMoved = { a, b -> moves += a to b }
-        // a new invite at its new address: the same id, so it's the same server (the old key given back, the new one kept in its place)
+        val rad = Server("https://other.example", "t9", "Rad's server", id = "srv-9")
+        val status = json("""{"server": "Bassi's server", "id": "srv-1", "needs_setup": false}""")
+        val me = json("""{"person": {"id": 2, "name": "Ana", "role": "friend"}, "device": {"id": 5, "name": "Pixel"}, "server": {"name": "Bassi's server", "id": "srv-1"}, "can": {"add": true, "split": true, "host": true}}""")
+        // a song's key, as it was joined
+        val dilawThen = ServerSong.from(JSONObject(dilaw), Rms(old, "tok-old")::id)!!.track()
+
+        // an invite at its new address, its key working there: it moves (as the computer app does), the invite unused
+        Servers.pretend(listOf(rad, s))
+        server.enqueue(status)
+        server.enqueue(me)
+        val moved = Servers.join("$new/join/ABCD-EFGH-JKLM", deviceName = "Pixel")
+        assertEquals(new, moved.base)
+        assertEquals(old, moved.first)
+        assertEquals("tok-old", moved.token)
+        assertEquals(listOf("Rad's server", "Bassi's server"), Servers.list.value.map { it.name })
+        assertEquals("/api/status", server.takeRequest().url.encodedPath)
+        val asked = server.takeRequest()
+        assertEquals("/api/me", asked.url.encodedPath)
+        assertEquals("Bearer tok-old", asked.headers["Authorization"])
+        assertEquals(2, server.requestCount)
+
+        // its key not working there: the invite gives a new one (the old one given back), its first address kept
+        Servers.pretend(listOf(s))
+        server.enqueue(status)
+        server.enqueue(json("""{"error": "This device isn't joined to the server, or it was removed."}""", 401))
         server.enqueue(json("""{"token": "tok-new", "person": {"id": 2, "name": "Ana", "role": "friend"}, "device": {"id": 8, "name": "Pixel"}, "server": {"name": "Bassi's server", "id": "srv-1"}}""", 201))
-        server.enqueue(json("""{"person": {"id": 2, "name": "Ana", "role": "friend"}, "device": {"id": 8, "name": "Pixel"}, "server": {"name": "Bassi's server", "id": "srv-1"}, "can": {"add": true, "split": true, "host": true}}"""))
+        server.enqueue(me)
         server.enqueue(json("""{"ok": true}"""))
         val joined = Servers.join("$new/join/ABCD-EFGH-JKLM", deviceName = "Pixel")
         assertEquals(new, joined.base)
-        assertEquals("srv-1", joined.id)
-        assertEquals(listOf("Rad's server", "Bassi's server"), Servers.list.value.map { it.name })
-        assertEquals(listOf(new), Servers.list.value.filter { it.id == "srv-1" }.map { it.base })
-        assertEquals(listOf(old to new), moves)
-        server.takeRequest(); server.takeRequest()
-        val gave = server.takeRequest()
-        assertEquals("/api/devices/5/revoke", gave.url.encodedPath)
-        assertEquals("Bearer tok-old", gave.headers["Authorization"])
+        assertEquals(old, joined.first)
+        assertEquals("tok-new", joined.token)
+        assertEquals(listOf(joined), Servers.list.value)
 
-        // or its new address typed (Settings → the server → It moved): its id says it's the same; this phone's key goes on working
+        // or its new address typed (Settings → the server → It moved): its id says it's the same server
         Servers.pretend(listOf(s))
-        moves.clear()
-        server.enqueue(json("""{"server": "Bassi's server", "id": "srv-1", "needs_setup": false}"""))
+        server.enqueue(status)
         server.enqueue(json("""{"person": {"id": 2, "name": "Ana", "role": "friend"}, "device": {"id": 5, "name": "Pixel"}, "server": {"name": "Bassi's server", "id": "srv-1"}, "can": {"add": true, "split": false, "host": true}}"""))
-        val moved = Servers.move(s, "localhost:$port".let { "http://$it" })
-        assertEquals(new, moved.base)
-        assertEquals("tok-old", moved.token)
-        assertEquals(Can(split = false), moved.can)
-        assertEquals(listOf(old to new), moves)
-        assertEquals(listOf(moved), Servers.list.value)
+        val typed = Servers.move(s, new)
+        assertEquals(new, typed.base)
+        assertEquals(old, typed.first)
+        assertEquals("tok-old", typed.token)
+        assertEquals(Can(split = false), typed.can)
         // another server answering there: no
         server.enqueue(json("""{"server": "Someone's server", "id": "srv-2", "needs_setup": false}"""))
-        val no = runCatching { Servers.move(moved, "http://127.0.0.1:$port") }.exceptionOrNull()
+        val no = runCatching { Servers.move(typed, "http://127.0.0.1:$port") }.exceptionOrNull()
         assertEquals("That's another server, not Bassi's server. Check the address with Bassi.", Errors.say(no, offline = false))
-        assertEquals(listOf(moved), Servers.list.value)
-        // a song's address there, rebased
-        assertEquals("$new/files/x.opus", Servers.rebased("$old/files/x.opus", old, new))
-        assertNull(Servers.rebased("https://other.example/files/x.opus", old, new))
+        assertEquals(listOf(typed), Servers.list.value)
+
+        // its songs, listed at the new address, keep their first address: the same keys as before the move
+        server.enqueue(json("""{"server": "Bassi's server", "total": 1, "offset": 0, "count": 1, "songs": [$dilaw]}"""))
+        val dilawNow = Servers.page(typed).songs.single().track()
+        assertEquals(dilawThen.key, dilawNow.key)
+        assertEquals("$old/files/Maki%20-%20Dilaw.opus", dilawNow.id)
+        assertEquals(typed, Servers.of(dilawNow))
+        // what's fetched goes to where it is now: the player's address, and a cover through the app's client
+        assertEquals("$new/files/Maki%20-%20Dilaw.opus?t=tok-old", Servers.sign(dilawNow.id))
+        assertEquals("$new/files/Maki%20-%20Dilaw.jpg", Servers.here("$old/files/Maki%20-%20Dilaw.jpg"))
+        server.enqueue(MockResponse(200, headersOf("Content-Type", "image/jpeg"), "jpg"))
+        Http.client.newCall(Request.Builder().url("$old/files/Maki%20-%20Dilaw.jpg").build()).execute().close()
+        // (the requests before it passed over)
+        val cover = generateSequence { server.takeRequest(2, TimeUnit.SECONDS) }.first { it.url.encodedPath.startsWith("/files/") }
+        assertEquals("localhost:$port", cover.headers["Host"])
+        assertEquals("Bearer tok-old", cover.headers["Authorization"])
     }
 }

@@ -247,7 +247,7 @@ class Party(private val app: App) {
 
             override fun onMessage(webSocket: WebSocket, text: String) {
                 val o = runCatching { JSONObject(text) }.getOrNull() ?: return
-                val p = if (o.optString("type") == "state") PartyState.from(o, s.rms::file) else null
+                val p = if (o.optString("type") == "state") PartyState.from(o, s.rms::id) else null
                 main.launch {
                     if (r != round) return@launch
                     when (o.optString("type")) {

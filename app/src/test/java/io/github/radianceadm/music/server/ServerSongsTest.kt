@@ -100,36 +100,38 @@ class ServerSongsTest {
         assertEquals("Bassi's server has “Dilaw” already; its parts went to it now, so everyone there can mix it.", ServerSongs.said(s, t, ServerSongs.Sent(Uploaded(false, true, emptyList(), copy), got)))
     }
 
-    @Test fun aServersNewAddressTakesYourSongsAlong() {
-        val old = "http://203.0.113.5:8080"
-        val new = "https://music.bassi.ph"
-        val was = Track(Source.SERVER, "$old/files/Maki%20-%20Dilaw.opus", "Dilaw", "Maki", art = "$old/files/Maki%20-%20Dilaw.jpg")
+    @Test fun aMovedServersSongsKeepTheirKeysAndComeFromItsNewAddress() {
+        // joined at an address that's gone now; it's at the pretend server's address since its owner gave it a domain
+        val first = "http://203.0.113.5:8080"
+        val s = Server(base, "tok", "Bassi's server", id = "srv-1", first = first)
+        Servers.pretend(listOf(s))
+        val was = Track(Source.SERVER, "$first/files/Maki%20-%20Dilaw.opus", "Dilaw", "Maki", art = "$first/files/Maki%20-%20Dilaw.jpg")
         app.library.like(was)
-        app.library.played(was)
-        app.library.saveSession(listOf(was), 0, 61_000)
-        // what's kept by its key: its cover, its lyrics, its parts
-        Saver.coverFile(app, was).apply { parentFile?.mkdirs(); writeText("cover") }
-        Saver.lyricsFile(app, was).apply { parentFile?.mkdirs(); writeText("[00:01.00]Dilaw") }
-        for (p in listOf("drums", "bass", "other", "vocals")) Splitter.partFileFor(app, was.key, p, "ogg").apply { parentFile?.mkdirs(); writeText(p) }
+        // its songs listed now: still at the address first joined, so the same key (Liked Songs, its cover, lyrics and parts kept by it still match)
+        val listed = """{"id": 7, "artist": "Maki", "title": "Dilaw", "file": "Maki - Dilaw.opus", "url": "/files/Maki%20-%20Dilaw.opus", "duration_ms": 228000,
+            "split": true, "parts": ["drums", "bass", "other", "vocals"], "lyrics": false, "word_times": false, "cover": "/files/Maki%20-%20Dilaw.jpg",
+            "files": {""" + listOf("drums", "bass", "other", "vocals").joinToString(", ") { p -> "\"$p\": {\"name\": \"Maki - Dilaw.$p.ogg\", \"size\": 3, \"url\": \"/files/Maki%20-%20Dilaw.$p.ogg\"}" } + """}}"""
+        server.enqueue(json("""{"server": "Bassi's server", "total": 1, "offset": 0, "count": 1, "songs": [$listed]}"""))
+        val now = Servers.page(s).songs.single()
+        assertEquals(was.key, now.track().key)
+        assertTrue(app.library.isLiked(now.track().key))
+        assertEquals("/api/library", server.takeRequest().url.encodedPath)
 
-        ServerSongs.rebase(app, old, new)
-
-        val now = app.library.liked.value.single()
-        assertEquals("$new/files/Maki%20-%20Dilaw.opus", now.id)
-        assertEquals("$new/files/Maki%20-%20Dilaw.jpg", now.art)
-        assertTrue(now.key != was.key)
-        assertEquals(now, app.library.history.value.single())
-        assertEquals(now, app.library.session()!!.first.single())
-        assertEquals("cover", Saver.coverFile(app, now).readText())
-        assertEquals("[00:01.00]Dilaw", Saver.lyricsFile(app, now).readText())
-        assertFalse(Saver.coverFile(app, was).exists())
-        assertEquals(setOf("drums", "bass", "other", "vocals"), Splitter.parts(app, now.key).keys)
-        assertTrue(Splitter.parts(app, was.key).isEmpty())
-        // another server's songs stay as they were
-        val other = Track(Source.SERVER, "https://other.example/files/x.opus", "X", "Y")
-        app.library.like(other)
-        ServerSongs.rebase(app, old, new)
-        assertNotNull(app.library.liked.value.firstOrNull { it.key == other.key })
+        // playing it: the player's address is where the server is now, with this phone's key
+        assertEquals("$base/files/Maki%20-%20Dilaw.opus?t=tok", Servers.sign(was.id))
+        // saving it: Saver downloads its address (Http.download), which goes to where the server is now, with the key
+        server.enqueue(MockResponse(200, headersOf("Content-Type", "audio/ogg"), "OggS-song"))
+        val out = java.io.ByteArrayOutputStream()
+        io.github.radianceadm.music.net.Http.download(was.id, out, null)
+        assertEquals("OggS-song", out.toString())
+        val saved = server.takeRequest()
+        assertEquals("/files/Maki%20-%20Dilaw.opus", saved.url.encodedPath)
+        assertEquals("Bearer tok", saved.headers["Authorization"])
+        // its parts for the Mixer: from where it is now, kept by its (unchanged) key
+        repeat(4) { server.enqueue(MockResponse(200, headersOf("Content-Type", "audio/ogg"), "ogg")) }
+        ServerSongs.fetchParts(app, was)
+        assertEquals(setOf("drums", "bass", "other", "vocals"), ServerSongs.parts(app, was).keys)
+        repeat(4) { assertEquals("Bearer tok", server.takeRequest().headers["Authorization"]) }
     }
 
     @Test fun theJoinPagesLinkOpensTheApp() {

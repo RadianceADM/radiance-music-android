@@ -21,8 +21,9 @@ import org.json.JSONObject
 /**
  * A server's changes as they happen, over its events WebSocket
  * (/api/events), in place of asking again and again: its library changed,
- * its split queue moved on, or something about you (the owner's switches for
- * you, or this phone removed). A screen showing a server listens while it's
+ * its split queue moved on, a party started or ended, or something about you
+ * (the owner's switches for you, or this phone removed). Kinds it doesn't
+ * know are passed over. A screen showing a server listens while it's
  * open ([watch]): one line per server, shared, joining again (more slowly
  * each time, as the party does) when it drops. While it's down ([up] false)
  * the screens look again now and then by themselves.
@@ -37,6 +38,8 @@ object Events {
         data class Queued(val queue: Queue) : Event()
         /** Your switches changed, or this phone was removed: ask who you are again. */
         object Me : Event()
+        /** A listening party started ([on], hosted by [host]) or ended. */
+        data class Party(val on: Boolean, val host: String?) : Event()
     }
 
     private class Line(var server: Server) {
@@ -114,6 +117,7 @@ object Events {
                     "library" -> Event.Library
                     "queue" -> Event.Queued(Queue.from(o))
                     "me" -> Event.Me
+                    "party" -> Event.Party(o.optBoolean("on"), o.str("host"))
                     else -> return
                 }
                 synchronized(lines) { if (r == line.round) line.events.tryEmit(e) }

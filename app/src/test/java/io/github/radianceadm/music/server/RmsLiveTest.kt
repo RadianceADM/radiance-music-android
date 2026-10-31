@@ -39,7 +39,6 @@ class RmsLiveTest {
 
     @After fun clear() {
         Servers.pretend(emptyList())
-        Servers.onMoved = null
     }
 
     private fun call(method: String, path: String, token: String?, body: JSONObject?): JSONObject {
@@ -189,6 +188,8 @@ class RmsLiveTest {
         val started = ana.startParty(everyoneControls = false)
         assertTrue(started.on)
         assertEquals("Ana", started.host?.name)
+        // the owner's phone heard it on the events line (its party card needn't ask)
+        waitFor { Events.Event.Party(true, "Ana") in heard }
         val twice = runCatching { owned.rms.startParty(false) }.exceptionOrNull() as Refused
         assertEquals(409, twice.code)
         // the owner's phone listens over the WebSocket
@@ -196,7 +197,7 @@ class RmsLiveTest {
         val socket = owned.rms.partySocket(object : WebSocketListener() {
             override fun onMessage(webSocket: WebSocket, text: String) {
                 val o = JSONObject(text)
-                if (o.optString("type") == "state") states += PartyState.from(o, owned.rms::file)
+                if (o.optString("type") == "state") states += PartyState.from(o, owned.rms::id)
             }
         })
         // its clock: a few pings, the quickest wins (the same computer: next to no offset to its wall clock)
@@ -231,6 +232,7 @@ class RmsLiveTest {
         // ended: off on every phone
         assertFalse(ana.endParty().on)
         waitFor { states.lastOrNull()?.on == false }
+        waitFor { Events.Event.Party(false, null) in heard }
         socket.close(1000, null)
 
         listening.cancel()
@@ -243,17 +245,21 @@ class RmsLiveTest {
         assertEquals(rads, Servers.joinLink(appLink!!))
         assertEquals(Servers.invite(rads), Servers.invite(appLink))
 
-        // 8. the server at a new address (its owner gave it a domain): the same id, so it moves, and your songs from it follow
-        val moves = mutableListOf<Pair<String, String>>()
-        Servers.onMoved = { a, b -> moves += a to b }
+        // 8. the server at a new address (its owner gave it a domain): the same id, so it moves; its songs keep their keys, what's fetched goes there
+        val keyBefore = dilaw.track().key
         val newAddress = base.replace("127.0.0.1", "localhost")
         val moved = Servers.move(owned, newAddress)
         assertEquals(newAddress, moved.base)
+        assertEquals(base, moved.first)
         assertEquals(owned.token, moved.token)
-        assertEquals(listOf(base to newAddress), moves)
         assertEquals("Bassi's server", moved.rms.me().server)
         assertEquals(listOf(moved), Servers.list.value)
-        Servers.onMoved = null
+        val listedNow = Servers.page(moved, q = "maki dilaw").songs.single()
+        assertEquals(keyBefore, listedNow.track().key)
+        val signedNow = Servers.sign(listedNow.url)
+        assertTrue(signedNow, signedNow.startsWith("$newAddress/files/"))
+        Http.client.newCall(Request.Builder().url(signedNow).build()).execute().use { assertEquals(200, it.code) }
+        Http.client.newCall(Request.Builder().url(listedNow.cover!!).build()).execute().use { assertEquals(200, it.code) }
 
         // 9. Ana's phone leaves: its key stops working there
         ana.leave(me.device)
