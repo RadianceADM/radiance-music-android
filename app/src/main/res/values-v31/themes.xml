@@ -1,5 +1,5 @@
 <resources>
-    <!-- Android 12 and later show their own splash first: plain navy, no icon, so the app's own sunrise follows it smoothly -->
+    <!-- Android 12 and later show their own splash first: plain black, no icon, so the app's own sunrise follows it smoothly -->
     <style name="Theme.Radiance" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">@color/night</item>
         <item name="android:colorAccent">@color/orange</item>

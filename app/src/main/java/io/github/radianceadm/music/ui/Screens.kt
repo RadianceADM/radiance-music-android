@@ -61,6 +61,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -75,6 +76,8 @@ import androidx.compose.ui.unit.dp
 import io.github.radianceadm.music.App
 import io.github.radianceadm.music.model.Track
 import io.github.radianceadm.music.model.matches
+import io.github.radianceadm.music.net.Connectivity
+import io.github.radianceadm.music.net.Errors
 import io.github.radianceadm.music.source.Archive
 import io.github.radianceadm.music.source.YouTube
 import java.util.Calendar
@@ -152,6 +155,11 @@ fun SearchScreen(pad: PaddingValues) {
     var suggestions by remember { mutableStateOf(emptyList<String>()) }
     var results by remember { mutableStateOf<List<Track>?>(null) }
     var busy by remember { mutableStateOf(false) }
+    // nothing found because it couldn't look (offline, or why), not because there's nothing; null: it looked
+    var problem by remember { mutableStateOf<String?>(null) }
+    var offline by remember { mutableStateOf(false) }
+    var tries by remember { mutableIntStateOf(0) } // Try again: the same search once more
+    val online by Connectivity.online.collectAsState()
     val lib = App.instance.library
     val liked by lib.liked.collectAsState()
     val hub = App.instance.player
@@ -164,30 +172,41 @@ fun SearchScreen(pad: PaddingValues) {
         delay(SEARCH_DEBOUNCE_MS)
         suggestions = withContext(Dispatchers.IO) { YouTube.suggestions(query) }.take(8)
     }
-    LaunchedEffect(asked) {
+    LaunchedEffect(asked, tries) {
         if (asked.isBlank()) return@LaunchedEffect
         busy = true
         suggestions = emptyList()
         // lossless first: the Internet Archive, then YouTube Music
-        results = withContext(Dispatchers.IO) {
+        val (found, failed) = withContext(Dispatchers.IO) {
             coroutineScope {
-                val archive = async { runCatching { Archive.search(asked) }.getOrDefault(emptyList()) }
-                val youtube = async { runCatching { YouTube.search(asked) }.getOrDefault(emptyList()) }
-                archive.await() + youtube.await()
+                val archive = async { runCatching { Archive.search(asked) } }
+                val youtube = async { runCatching { YouTube.search(asked) } }
+                val (a, y) = archive.await() to youtube.await()
+                (a.getOrDefault(emptyList()) + y.getOrDefault(emptyList())) to (y.exceptionOrNull() ?: a.exceptionOrNull())
             }
         }
+        offline = found.isEmpty() && !Connectivity.online.value
+        problem = when {
+            found.isNotEmpty() -> null
+            offline -> "You're offline. Connect to search."
+            failed != null -> "Couldn't search. ${Errors.say(failed)}"
+            else -> null
+        }
+        results = found
         busy = false
     }
+    // back online after a search that couldn't look: it looks again
+    LaunchedEffect(online) { if (online && offline && asked.isNotBlank()) tries++ }
     Column(Modifier.fillMaxSize().padding(top = pad.calculateTopPadding())) {
         TextField(
             value = query,
             onValueChange = { query = it },
             placeholder = { Text("Search any song or artist") },
             leadingIcon = { Icon(Icons.Rounded.Search, null) },
-            trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { query = ""; results = null; asked = "" }) { Icon(Icons.Rounded.Close, "Clear") } },
+            trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { query = ""; results = null; asked = ""; problem = null; offline = false }) { Icon(Icons.Rounded.Close, "Clear") } },
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { asked = query.trim() }),
+            keyboardActions = KeyboardActions(onSearch = { if (asked == query.trim()) tries++ else asked = query.trim() }), // the same again: it looks again
             shape = RoundedCornerShape(50),
             colors = TextFieldDefaults.colors(focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent, focusedContainerColor = Brand.Card, unfocusedContainerColor = Brand.Card),
             modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -209,6 +228,17 @@ fun SearchScreen(pad: PaddingValues) {
                     }
                 } else {
                     Note("Lossless FLAC from the Internet Archive comes first; YouTube Music when it's not there. Like a song and it's saved to Music/Radiance Music on your phone.")
+                }
+            }
+            list.isEmpty() && problem != null -> {
+                Problem(problem.orEmpty(), offline, onRetry = { tries++ })
+                // your liked songs play offline: the ones that match, here
+                val mine = liked.filter { matches(it, asked) }
+                if (mine.isNotEmpty()) {
+                    SectionTitle("In your liked songs")
+                    LazyColumn(contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = pad.calculateBottomPadding())) {
+                        itemsIndexed(mine) { i, t -> TrackRow(t, onPlay = { hub.play(mine, i) }) }
+                    }
                 }
             }
             list.isEmpty() -> Note("Nothing found for “$asked”.")

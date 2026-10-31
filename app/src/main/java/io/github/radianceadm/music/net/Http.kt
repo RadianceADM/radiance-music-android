@@ -57,7 +57,7 @@ object Http {
             val req = Request.Builder().url(url).header("User-Agent", USER_AGENT).header("Range", "bytes=$at-$end").build()
             val got = client.newCall(req).execute().use { r ->
                 if (r.code == 416 && at > 0) return@use -1L // past the end: it's all here
-                if (r.code != 206 && r.code != 200) error("the download stopped (HTTP ${r.code})")
+                if (r.code != 206 && r.code != 200) fail("The download stopped. Try again.", "HTTP ${r.code}")
                 val bytes = r.body.byteStream().use { it.copyTo(out) }
                 if (r.code == 200) return@use -1L // the server sent it all at once
                 bytes

@@ -100,6 +100,7 @@ private fun Radiance() {
             containerColor = Brand.Night,
             bottomBar = {
                 Column {
+                    OfflinePill() // offline: a small pill over the song playing
                     MiniPlayer(onOpen = { nowPlaying = true })
                     NavigationBar(containerColor = Brand.Night) {
                         Tab.entries.forEach { t ->
@@ -127,6 +128,7 @@ private fun Radiance() {
         AnimatedVisibility(settings, enter = slideInHorizontally { it }, exit = slideOutHorizontally { it }) {
             SettingsScreen(onClose = { settings = false }, onGuide = { guide = true })
         }
+        Notices() // what to tell you (in place of toasts), at the top, over every screen
         if (guide) GuideScreen(onDone = { Guide.seen(ctx); guide = false })
         val sharing by App.instance.shareOpen.collectAsState()
         sharing?.let { ask -> ShareSongsSheet(ask.songs, ask.scan, onDismiss = { App.instance.shareOpen.value = null }) }

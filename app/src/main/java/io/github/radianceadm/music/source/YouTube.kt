@@ -5,6 +5,7 @@ import io.github.radianceadm.music.model.Track
 import io.github.radianceadm.music.model.plain
 import io.github.radianceadm.music.model.splitCredit
 import io.github.radianceadm.music.net.Http
+import io.github.radianceadm.music.net.fail
 import org.json.JSONArray
 import org.json.JSONObject
 import org.schabi.newpipe.extractor.MediaFormat
@@ -72,7 +73,7 @@ object YouTube {
         val streams = infoOf(id).audioStreams.filter { it.plainHttp() }
         val best = streams.filter { it.format == MediaFormat.WEBMA_OPUS }.maxByOrNull { it.averageBitrate }
             ?: streams.maxByOrNull { it.averageBitrate }
-            ?: error("YouTube didn't give this song's sound")
+            ?: fail("YouTube didn't give this song's sound.")
         return best.asStream()
     }
 

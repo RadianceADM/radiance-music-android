@@ -11,6 +11,7 @@ import io.github.radianceadm.music.data.Import
 import io.github.radianceadm.music.data.Saver
 import io.github.radianceadm.music.model.Track
 import io.github.radianceadm.music.model.fold
+import io.github.radianceadm.music.net.fail
 import io.github.radianceadm.music.split.Splitter
 import java.io.File
 import java.io.InputStream
@@ -108,7 +109,7 @@ object PhoneShare {
         override fun write(item: Wire.Item, kind: String, input: InputStream, size: Long) {
             val name = item.files.getValue(kind).name
             val ext = name.substringAfterLast('.', "").lowercase().filter { it.isLetterOrDigit() }.take(5)
-            val t = mine(item) ?: Track.fromJson(item.track) ?: error("a song with no details")
+            val t = mine(item) ?: Track.fromJson(item.track) ?: fail("A song came with no details.")
             when (kind) {
                 "song" -> {
                     val display = safeName(name, ext.ifEmpty { "m4a" })

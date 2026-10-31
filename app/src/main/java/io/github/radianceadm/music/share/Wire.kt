@@ -1,5 +1,6 @@
 package io.github.radianceadm.music.share
 
+import io.github.radianceadm.music.net.fail
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -133,7 +134,7 @@ object Wire {
         var windowBytes = 0L
         while (left > 0) {
             val n = input.read(buf, 0, minOf(buf.size.toLong(), left).toInt())
-            if (n < 0) error("the song stopped coming (${size - left} of $size bytes)")
+            if (n < 0) fail("The song stopped coming.", "${size - left} of $size bytes")
             out.write(buf, 0, n)
             left -= n
             moved(n.toLong())
@@ -315,7 +316,7 @@ object Wire {
     /** Takes what's missing here of what [base] offers, into [store]. How many songs came. */
     fun pull(base: String, key: String, store: Store, pace: Pace = Pace { 0 }, cancelled: () -> Boolean = { false }, progress: (Progress) -> Unit = {}): Int {
         val list = http.newCall(Request.Builder().url(url(base, "/list", key)).build()).execute().use { r ->
-            if (!r.isSuccessful) error("the other device said no (${r.code})")
+            if (!r.isSuccessful) fail("The other device said no. Scan its QR again.", "HTTP ${r.code}")
             JSONObject(r.body.string()).getJSONArray("songs")
         }
         val items = (0 until list.length()).mapNotNull { Item.fromJson(list.getJSONObject(it)) }
@@ -331,7 +332,7 @@ object Wire {
                 if (cancelled()) break
                 val size = item.files.getValue(kind).size
                 http.newCall(Request.Builder().url(url(base, "/file", key, mapOf("key" to item.key, "kind" to kind))).build()).execute().use { r ->
-                    if (!r.isSuccessful) error("“$title” didn't come (${r.code})")
+                    if (!r.isSuccessful) fail("“$title” didn't come.", "HTTP ${r.code}")
                     val counted = Counting(r.body.byteStream()) { n -> bytes += n; progress(Progress(bytes, total, songs, todo.size, title)) }
                     val paced = Paced(counted, pace)
                     store.write(item, kind, paced, size)
@@ -350,7 +351,7 @@ object Wire {
         val items = offer.items()
         val body = JSONObject().put("songs", JSONArray(items.map { it.toJson() })).toString()
         val want = http.newCall(Request.Builder().url(url(base, "/plan", key)).post(body.toRequestBody("application/json".toMediaType())).build()).execute().use { r ->
-            if (!r.isSuccessful) error("the other device said no (${r.code})")
+            if (!r.isSuccessful) fail("The other device said no. Scan its QR again.", "HTTP ${r.code}")
             JSONObject(r.body.string()).getJSONObject("want")
         }
         val todo = items.filter { want.has(it.key) }.map { i -> i to (0 until want.getJSONArray(i.key).length()).map { want.getJSONArray(i.key).getString(it) }.filter { it in i.files } }
@@ -364,7 +365,7 @@ object Wire {
             for (kind in kinds) {
                 if (cancelled()) break
                 val size = item.files.getValue(kind).size
-                val src = offer.open(item.key, kind) ?: error("“$title” isn't here any more")
+                val src = offer.open(item.key, kind) ?: fail("“$title” isn't on this phone any more.")
                 val req = object : RequestBody() {
                     override fun contentType() = "application/octet-stream".toMediaType()
                     override fun contentLength() = size
@@ -373,7 +374,7 @@ object Wire {
                     }
                 }
                 http.newCall(Request.Builder().url(url(base, "/file", key, mapOf("key" to item.key, "kind" to kind))).put(req).build()).execute().use { r ->
-                    if (!r.isSuccessful) error("“$title” wasn't taken (${r.code})")
+                    if (!r.isSuccessful) fail("“$title” wasn't taken.", "HTTP ${r.code}")
                 }
             }
             if (cancelled()) break

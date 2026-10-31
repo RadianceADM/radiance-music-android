@@ -22,7 +22,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
 
-/** The share's QR as drawn (round dots, rounded eyes, navy on white) still reads back, at phone-camera sizes. */
+/** The share's QR as drawn (round dots, rounded eyes, the app's dark on white) still reads back, at phone-camera sizes. */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [35], application = android.app.Application::class)
@@ -34,7 +34,7 @@ class QrTest {
         val out = Bitmap.createBitmap(px + 2 * pad, px + 2 * pad, Bitmap.Config.ARGB_8888)
         val c = Canvas(out)
         c.drawColor(Color.WHITE)
-        val ink = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF0C1D38.toInt() }
+        val ink = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF0C0A09.toInt() }
         val white = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
         val cell = px.toFloat() / n
         fun eye(x: Int, y: Int) = (x < 7 && y < 7) || (x >= n - 7 && y < 7) || (x < 7 && y >= n - 7)

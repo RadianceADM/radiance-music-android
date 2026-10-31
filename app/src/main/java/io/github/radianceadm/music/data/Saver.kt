@@ -14,6 +14,7 @@ import androidx.media3.transformer.Transformer
 import io.github.radianceadm.music.model.Source
 import io.github.radianceadm.music.model.Track
 import io.github.radianceadm.music.net.Http
+import io.github.radianceadm.music.net.fail
 import io.github.radianceadm.music.source.Lyrics
 import io.github.radianceadm.music.source.LyricsFinder
 import io.github.radianceadm.music.source.YouTube
@@ -60,7 +61,7 @@ object Saver {
             put(MediaStore.MediaColumns.RELATIVE_PATH, folder)
             put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
-        return context.contentResolver.insert(collection, values) ?: error("couldn't make the file in $folder")
+        return context.contentResolver.insert(collection, values) ?: fail("Couldn't make the file in $folder.")
     }
 
     private fun finish(context: Context, uri: Uri) {

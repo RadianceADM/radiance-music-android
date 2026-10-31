@@ -11,6 +11,7 @@ import android.provider.MediaStore
 import androidx.core.content.FileProvider
 import io.github.radianceadm.music.model.Source
 import io.github.radianceadm.music.model.Track
+import io.github.radianceadm.music.net.fail
 import java.io.File
 
 /** Sending a song's story card out: Android's share menu (Instagram, Facebook, Messenger…) or the phone's photos. */
@@ -59,7 +60,7 @@ object Share {
             put(MediaStore.Video.Media.IS_PENDING, 1)
         }
         val r = context.contentResolver
-        val uri = r.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values) ?: error("the phone wouldn't make the video")
+        val uri = r.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values) ?: fail("The phone wouldn't make the video file.")
         r.openOutputStream(uri)!!.use { out -> video.inputStream().use { it.copyTo(out) } }
         r.update(uri, ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }, null, null)
         return uri
@@ -74,7 +75,7 @@ object Share {
             put(MediaStore.Images.Media.IS_PENDING, 1)
         }
         val r = context.contentResolver
-        val uri = r.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: error("the phone wouldn't make the picture")
+        val uri = r.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: fail("The phone wouldn't make the picture file.")
         r.openOutputStream(uri)!!.use { card.compress(Bitmap.CompressFormat.JPEG, 95, it) }
         r.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
         return uri

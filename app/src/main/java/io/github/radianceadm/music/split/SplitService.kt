@@ -18,6 +18,8 @@ import androidx.core.content.ContextCompat
 import io.github.radianceadm.music.App
 import io.github.radianceadm.music.R
 import io.github.radianceadm.music.model.Track
+import io.github.radianceadm.music.net.Errors
+import io.github.radianceadm.music.net.fail
 import io.github.radianceadm.music.ui.MainActivity
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -89,7 +91,7 @@ class Splits(private val app: App) {
     internal fun report(t: Track, step: Splitter.Step?) { _now.value = step?.let { Now(t, it) } }
     internal fun finished(t: Track, problem: String?) {
         _now.value = null
-        if (problem != null) _problem.value = "Couldn't split “${t.title}”: $problem"
+        if (problem != null) _problem.value = "Couldn't split “${t.title}”. $problem"
         save(_queue.value.filterNot { it.key == t.key })
         if (problem == null) _done.value += 1
     }
@@ -159,7 +161,7 @@ class SplitService : Service() {
                         waited++
                         song = app.library.best(t)
                     }
-                    if (song.file == null) error("it isn't saved on this phone (like it to save it)")
+                    if (song.file == null) fail("It isn't saved on this phone: like it to save it.")
                     var last = 0L
                     Splitter.split(this, song, splits.cores, { step ->
                         splits.report(t, step)
@@ -171,7 +173,7 @@ class SplitService : Service() {
                     }, { splits.stopAsked })
                 } catch (e: Throwable) {
                     Log.e("radiance-split", "split failed", e)
-                    problem = e.message ?: e.javaClass.simpleName
+                    problem = Errors.say(e, offline = false) // in plain words (the log has the rest)
                 }
                 if (splits.stopAsked) problem = null
                 splits.finished(t, if (splits.stopAsked) null else problem)

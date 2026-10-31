@@ -96,6 +96,7 @@ import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -136,6 +137,7 @@ import io.github.radianceadm.music.App
 import io.github.radianceadm.music.data.Saver
 import io.github.radianceadm.music.model.Track
 import io.github.radianceadm.music.model.clock
+import io.github.radianceadm.music.net.Connectivity
 import io.github.radianceadm.music.play.Effects
 import io.github.radianceadm.music.source.Line
 import io.github.radianceadm.music.source.Lyrics
@@ -209,6 +211,8 @@ fun NowPlayingScreen(onClose: () -> Unit) {
     val hub = App.instance.player
     val current by hub.current.collectAsState()
     val playing by hub.playing.collectAsState()
+    val loading by hub.buffering.collectAsState()
+    val problem by hub.problem.collectAsState()
     val around by hub.around.collectAsState()
     var showLyrics by rememberSaveable { mutableStateOf(false) }
     var showQueue by remember { mutableStateOf(false) }
@@ -232,13 +236,14 @@ fun NowPlayingScreen(onClose: () -> Unit) {
         Backdrop(t?.art)
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 26.dp)) {
             Grabber(onClose, pulled, let)
+            OfflinePill()
             if (t != null && showLyrics) {
                 Row(Modifier.padding(top = 6.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(60.dp).shadow(10.dp, RoundedCornerShape(8.dp)).clip(RoundedCornerShape(8.dp)).background(Brand.Card)) {
                         if (!t.art.isNullOrEmpty()) AsyncImage(t.art, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                     }
                     Spacer(Modifier.width(14.dp))
-                    SongTitle(t, Modifier.weight(1f), small = true)
+                    SongTitle(t, Modifier.weight(1f), small = true, note = problem)
                     Heart(t)
                     More(t, onShare = { sharing = emptyList() }, onMixer = { showMixer = true })
                 }
@@ -248,7 +253,7 @@ fun NowPlayingScreen(onClose: () -> Unit) {
                     SwipeCover(t, around, playing, pulled, let)
                 }
                 Row(Modifier.padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-                    SongTitle(t, Modifier.weight(1f), small = false)
+                    SongTitle(t, Modifier.weight(1f), small = false, note = problem)
                     if (t != null) {
                         Heart(t)
                         More(t, onShare = { sharing = emptyList() }, onMixer = { showMixer = true })
@@ -259,6 +264,8 @@ fun NowPlayingScreen(onClose: () -> Unit) {
             Row(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 10.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { hub.previous() }, modifier = Modifier.size(72.dp)) { Icon(Icons.Rounded.FastRewind, "Previous", tint = Color.White, modifier = Modifier.size(44.dp)) }
                 IconButton(onClick = { hub.toggle() }, modifier = Modifier.size(88.dp)) {
+                    // the song on its way (found, loaded): a ring turns around the button
+                    if (loading) CircularProgressIndicator(color = Color.White.copy(alpha = 0.75f), strokeWidth = 3.dp, modifier = Modifier.size(82.dp).semantics { contentDescription = "Loading the song" })
                     Icon(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (playing) "Pause" else "Play", tint = Color.White, modifier = Modifier.size(64.dp))
                 }
                 IconButton(onClick = { hub.next() }, modifier = Modifier.size(72.dp)) { Icon(Icons.Rounded.FastForward, "Next", tint = Color.White, modifier = Modifier.size(44.dp)) }
@@ -295,14 +302,18 @@ private fun Grabber(onClose: () -> Unit, pulled: (Float) -> Unit, let: (Float) -
     }
 }
 
+/** The song and who it's by; [note] (why the music stopped) in its place while there's one. */
 @Composable
-private fun SongTitle(t: Track?, modifier: Modifier, small: Boolean) {
+private fun SongTitle(t: Track?, modifier: Modifier, small: Boolean, note: String? = null) {
     Column(modifier) {
         Text(
             t?.title ?: "Nothing playing", color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
             style = if (small) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
         )
-        Text(t?.byline().orEmpty(), color = Color.White.copy(alpha = 0.6f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = if (small) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge)
+        Text(
+            note ?: t?.byline().orEmpty(), color = if (note != null) Brand.Glow else Color.White.copy(alpha = 0.6f), maxLines = if (note != null) 2 else 1, overflow = TextOverflow.Ellipsis,
+            style = if (small) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
+        )
     }
 }
 
@@ -617,15 +628,29 @@ private fun EffectSliders() {
     }
 }
 
-/** The lyrics, the line being sung drawn big and kept in view; tap a line to go there. */
+/**
+ * The lyrics, the line being sung drawn big and kept in view; tap a line to go
+ * there. None found while offline says so (Connect, Try again), and looks
+ * again when the phone's back online.
+ */
 @Composable
 private fun LyricsView(t: Track, positionMs: Long, onShareLine: (String) -> Unit) {
     val context = App.instance
     var lyrics by remember(t.key) { mutableStateOf<Lyrics?>(null) }
-    LaunchedEffect(t.key) { lyrics = withContext(Dispatchers.IO) { runCatching { Saver.lyrics(context, t) }.getOrDefault(Lyrics.None) } }
+    var offline by remember(t.key) { mutableStateOf(false) }
+    var tries by remember(t.key) { mutableIntStateOf(0) }
+    val online by Connectivity.online.collectAsState()
+    LaunchedEffect(t.key, tries) {
+        lyrics = null
+        val found = withContext(Dispatchers.IO) { runCatching { Saver.lyrics(context, t) }.getOrDefault(Lyrics.None) }
+        offline = found is Lyrics.None && !Connectivity.online.value
+        lyrics = found
+    }
+    LaunchedEffect(online) { if (online && offline) tries++ }
     when (val l = lyrics) {
         null -> Text("Looking for lyrics…", color = Color.White.copy(alpha = 0.7f))
-        is Lyrics.None -> Text("No lyrics found for this song.", color = Color.White.copy(alpha = 0.7f))
+        is Lyrics.None -> if (offline) Problem("You're offline. Connect to see the lyrics.", offline = true, onRetry = { tries++ }, color = Color.White.copy(alpha = 0.85f), modifier = Modifier.padding(top = 12.dp))
+        else Text("No lyrics found for this song.", color = Color.White.copy(alpha = 0.7f))
         is Lyrics.Plain -> LazyColumn(contentPadding = PaddingValues(vertical = 24.dp)) {
             item { Text(l.text, color = Color.White, fontSize = 20.sp, lineHeight = 30.sp, fontWeight = FontWeight.SemiBold) }
         }
@@ -709,6 +734,8 @@ fun MiniPlayer(onOpen: () -> Unit) {
     val hub = App.instance.player
     val current by hub.current.collectAsState()
     val playing by hub.playing.collectAsState()
+    val loading by hub.buffering.collectAsState()
+    val problem by hub.problem.collectAsState()
     val around by hub.around.collectAsState()
     val t = current ?: return
     val (position, duration) = rememberPosition()
@@ -744,9 +771,13 @@ fun MiniPlayer(onOpen: () -> Unit) {
             Artwork(t.art, 44.dp, corner = 10.dp)
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 Text(t.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(t.artist, style = MaterialTheme.typography.bodyMedium, color = Brand.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // why the music stopped, in its place while there's one
+                Text(problem ?: t.artist, style = MaterialTheme.typography.bodyMedium, color = if (problem != null) Brand.Glow else Brand.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            IconButton(onClick = { hub.toggle() }) { Icon(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (playing) "Pause" else "Play", tint = Color.White) }
+            IconButton(onClick = { hub.toggle() }) {
+                if (loading) CircularProgressIndicator(color = Brand.Orange, strokeWidth = 2.dp, modifier = Modifier.size(36.dp).semantics { contentDescription = "Loading the song" })
+                Icon(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (playing) "Pause" else "Play", tint = Color.White)
+            }
             IconButton(onClick = { hub.next() }) { Icon(Icons.Rounded.FastForward, "Next", tint = Color.White) }
         }
         LinearProgressIndicator(

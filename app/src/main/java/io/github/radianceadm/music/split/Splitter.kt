@@ -6,6 +6,7 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import io.github.radianceadm.music.model.Track
+import io.github.radianceadm.music.net.fail
 import java.io.File
 import java.io.FileInputStream
 import java.nio.ByteBuffer
@@ -65,7 +66,7 @@ object Splitter {
      * four parts appear only when all are done (a stopped split leaves nothing).
      */
     fun split(context: Context, t: Track, threads: Int, say: (Step) -> Unit, cancelled: () -> Boolean) {
-        val song = t.file ?: error("the song isn't saved on this phone yet")
+        val song = t.file ?: fail("The song isn't saved on this phone yet.")
         val work = File(context.cacheDir, "split").apply { deleteRecursively(); mkdirs() }
         val out = dir(context).apply { mkdirs() }
         try {

@@ -16,6 +16,8 @@ import androidx.core.content.ContextCompat
 import io.github.radianceadm.music.App
 import io.github.radianceadm.music.R
 import io.github.radianceadm.music.model.Track
+import io.github.radianceadm.music.net.Errors
+import io.github.radianceadm.music.net.fail
 import io.github.radianceadm.music.ui.MainActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -78,13 +80,13 @@ class Session(private val app: App) {
                 val g = if (direct) withContext(Dispatchers.Main) { Direct.open(app) } else null
                 group = g
                 val host = Direct.wifiAddress()
-                if (host == null && g == null) error("this phone isn't on Wi-Fi, and couldn't make its own network")
+                if (host == null && g == null) fail("This phone isn't on Wi-Fi, and couldn't make its own network.")
                 val ticket = Wire.Ticket(mode, host, s.port, s.key, name(), g?.name, g?.pass, g?.let { Direct.HOST })
                 _state.value = State.Showing(ticket, what, null)
                 ShareService.start(app)
             } catch (e: Throwable) {
                 Log.e(TAG, "couldn't open a share", e)
-                _state.value = State.Failed(e.message ?: "couldn't get ready")
+                _state.value = State.Failed(Errors.say(e, offline = false)) // (phone to phone: the internet doesn't matter)
                 close(keepState = true)
             }
         }
@@ -116,7 +118,7 @@ class Session(private val app: App) {
                         for (i in 0 until 10) { if (Wire.reachable(gh, t.key, t.mode)) { base = gh; break }; Thread.sleep(700) }
                     }
                 }
-                if (base == null) error("couldn't reach ${t.name}. Are both on the same Wi-Fi? (Or let this phone join its own: allow Nearby devices.)")
+                if (base == null) fail("Couldn't reach ${t.name}. Are both on the same Wi-Fi? (Or let this phone join its own: allow Nearby devices.)")
                 ShareService.start(app)
                 val receiving = offer == null
                 val report = { p: Wire.Progress ->
@@ -135,7 +137,7 @@ class Session(private val app: App) {
                 )
             } catch (e: Throwable) {
                 Log.e(TAG, "share failed", e)
-                _state.value = State.Failed(e.message ?: "it stopped")
+                _state.value = State.Failed(Errors.say(e, offline = false))
             } finally {
                 close(keepState = true)
             }

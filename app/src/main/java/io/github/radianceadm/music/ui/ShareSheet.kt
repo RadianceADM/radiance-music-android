@@ -1,8 +1,8 @@
 package io.github.radianceadm.music.ui
 
+import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -38,6 +38,8 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.VolumeOff
@@ -47,11 +49,14 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -75,6 +80,8 @@ import io.github.radianceadm.music.App
 import io.github.radianceadm.music.data.Saver
 import io.github.radianceadm.music.model.Track
 import io.github.radianceadm.music.model.clock
+import io.github.radianceadm.music.net.Connectivity
+import io.github.radianceadm.music.net.Errors
 import io.github.radianceadm.music.share.Share
 import io.github.radianceadm.music.share.StoryCard
 import io.github.radianceadm.music.share.StoryVideo
@@ -109,7 +116,9 @@ internal fun ShareScreen(t: Track, startLines: List<String>, onClose: () -> Unit
     val context = App.instance
     val scope = rememberCoroutineScope()
     val hub = App.instance.player
-    val song = remember(t.key) { (t.file ?: App.instance.library.best(t).file)?.let(Uri::parse) }
+    // its saved copy (the sound for the video): here once it's saved, even while this is open
+    val liked by App.instance.library.liked.collectAsState()
+    val song = remember(t.key, liked) { (t.file ?: App.instance.library.best(t).file)?.let(Uri::parse) }
     var art by remember(t.key) { mutableStateOf<Bitmap?>(null) }
     var artLoaded by remember(t.key) { mutableStateOf(false) }
     var lines by remember(t.key) { mutableStateOf<List<Pick>?>(null) }
@@ -123,10 +132,20 @@ internal fun ShareScreen(t: Track, startLines: List<String>, onClose: () -> Unit
     var choosing by remember { mutableStateOf(false) }
     // the video made last, and what it was made of (sent again to another app as it is)
     var made by remember { mutableStateOf<Pair<String, File>?>(null) }
+    // what to tell you here (this sheet is its own window: the app's notices would be under it)
+    val notes = remember { SnackbarHostState() }
+    fun say(n: Notice) { scope.launch { notes.tell(n) } }
+    // no lyrics because the phone's offline: said, and looked for again once it's back
+    var linesOffline by remember(t.key) { mutableStateOf(false) }
+    var linesTries by remember(t.key) { mutableIntStateOf(0) }
+    val online by Connectivity.online.collectAsState()
 
     LaunchedEffect(t.key) {
         art = withContext(Dispatchers.IO) { StoryCard.cover(context, t) }
         artLoaded = true
+    }
+    LaunchedEffect(t.key, linesTries) {
+        lines = null
         val all = withContext(Dispatchers.IO) {
             when (val l = runCatching { Saver.lyrics(context, t) }.getOrDefault(Lyrics.None)) {
                 is Lyrics.Timed -> l.lines.map { Pick(it.text.trim(), it.start) }
@@ -134,10 +153,12 @@ internal fun ShareScreen(t: Track, startLines: List<String>, onClose: () -> Unit
                 else -> emptyList()
             }.filter { it.text.isNotEmpty() && it.text.any(Char::isLetterOrDigit) }
         }
+        linesOffline = all.isEmpty() && !Connectivity.online.value
         lines = all
         // a line long-pressed in the lyrics comes picked
         for (s in startLines) all.indexOfFirst { it.text == s.trim() }.takeIf { it >= 0 && it !in picked }?.let { picked.add(it) }
     }
+    LaunchedEffect(online) { if (online && linesOffline) linesTries++ }
     val swatches = remember(art) { StoryCard.swatches(art) }
     val order = picked.sorted()
     val chosen = if (lyricsStyle) order.mapNotNull { lines?.getOrNull(it)?.text } else emptyList()
@@ -181,8 +202,10 @@ internal fun ShareScreen(t: Track, startLines: List<String>, onClose: () -> Unit
                 }
             }
             making = null
-            ok.onSuccess { if (target.kind == Targets.Kind.SAVE) Toast.makeText(context, if (mime == "video/mp4") "Saved in your gallery (Pictures/Radiance Music), with its sound" else "Saved in your gallery (Pictures/Radiance Music)", Toast.LENGTH_SHORT).show() }
-            ok.onFailure { e -> if (e !is kotlinx.coroutines.CancellationException) Toast.makeText(context, "Couldn't share it: ${e.message}", Toast.LENGTH_LONG).show() }
+            ok.onSuccess { saved ->
+                if (saved is Uri) say(Notice(if (mime == "video/mp4") "Saved in your gallery (Pictures/Radiance Music), with its sound." else "Saved in your gallery (Pictures/Radiance Music).", Notice.Action("Open", Icons.Rounded.PhotoLibrary) { openSaved(saved, mime) }))
+            }
+            ok.onFailure { e -> if (e !is kotlinx.coroutines.CancellationException) say(Notice("Couldn't share it. ${Errors.say(e)}", Notice.retry { go(target) })) }
         }
     }
 
@@ -229,7 +252,11 @@ internal fun ShareScreen(t: Track, startLines: List<String>, onClose: () -> Unit
                 }
                 Spacer(Modifier.width(8.dp))
                 Chip(if (sound && song != null) "With sound" else "No sound", sound && song != null, icon = { on -> Icon(if (on) Icons.Rounded.VolumeUp else Icons.Rounded.VolumeOff, null, tint = if (on) Color.Black else Color.White, modifier = Modifier.size(16.dp)) }) {
-                    if (song == null) Toast.makeText(context, "Like the song first: the sound comes from its saved copy", Toast.LENGTH_LONG).show() else sound = !sound
+                    when {
+                        song != null -> sound = !sound
+                        App.instance.library.isLiked(t.key) -> say(Notice("“${t.title}” is still saving: the sound is here once it's saved."))
+                        else -> say(Notice("The sound comes from the song's saved copy: like it to save it.", Notice.Action("Like it", Icons.Rounded.Favorite) { App.instance.like(t) }))
+                    }
                 }
             }
             // its colour
@@ -257,8 +284,18 @@ internal fun ShareScreen(t: Track, startLines: List<String>, onClose: () -> Unit
             tone = base,
             withSound = sound && song != null,
             onDone = { choosing = false; if (picked.isEmpty()) lyricsStyle = false },
+            offline = linesOffline,
+            onRetry = { linesTries++ },
+            onSay = { say(Notice(it)) },
         )
     }
+    NoticeHost(notes)
+}
+
+/** A story just saved, opened in the phone's gallery. */
+private fun openSaved(uri: Uri, mime: String) {
+    val app = App.instance
+    runCatching { app.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)) }
 }
 
 /**
@@ -268,8 +305,10 @@ internal fun ShareScreen(t: Track, startLines: List<String>, onClose: () -> Unit
  * [StoryCard.MOST_CHARS] characters; a line away from them starts again from it.
  */
 @Composable
-internal fun LyricPicker(lines: List<Pick>?, picked: MutableList<Int>, tone: Color, withSound: Boolean, onDone: () -> Unit) {
-    val context = App.instance
+internal fun LyricPicker(
+    lines: List<Pick>?, picked: MutableList<Int>, tone: Color, withSound: Boolean, onDone: () -> Unit,
+    offline: Boolean = false, onRetry: () -> Unit = {}, onSay: (String) -> Unit = {},
+) {
     val used = picked.sumOf { lines?.getOrNull(it)?.text?.length ?: 0 }
     Box(Modifier.fillMaxSize().background(tone).background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.15f), Color.Black.copy(alpha = 0.55f))))) {
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
@@ -300,6 +339,7 @@ internal fun LyricPicker(lines: List<Pick>?, picked: MutableList<Int>, tone: Col
             )
             when {
                 lines == null -> Note("Looking for lyrics…")
+                lines.isEmpty() && offline -> Problem("You're offline. Connect to pick lyrics.", offline = true, onRetry = onRetry, color = Color.White.copy(alpha = 0.85f))
                 lines.isEmpty() -> Note("No lyrics for this song: its story has the cover.")
                 else -> LazyColumn(Modifier.fillMaxWidth().weight(1f), contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 40.dp)) {
                     itemsIndexed(lines) { i, line ->
@@ -315,7 +355,7 @@ internal fun LyricPicker(lines: List<Pick>?, picked: MutableList<Int>, tone: Col
                                 .background(if (on) Color.White.copy(alpha = 0.14f) else Color.Transparent)
                                 .clickable {
                                     val msg = pick(picked, i, lines.map { it.text.length })
-                                    if (msg != null) Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                    if (msg != null) onSay(msg)
                                 }
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                         )
