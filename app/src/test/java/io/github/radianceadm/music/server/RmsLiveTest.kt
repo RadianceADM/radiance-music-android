@@ -7,6 +7,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -36,7 +37,10 @@ class RmsLiveTest {
     private val url = System.getenv("RMS_URL")
     private val key = System.getenv("RMS_SETUP_KEY")
 
-    @After fun clear() = Servers.pretend(emptyList())
+    @After fun clear() {
+        Servers.pretend(emptyList())
+        Servers.onMoved = null
+    }
 
     private fun call(method: String, path: String, token: String?, body: JSONObject?): JSONObject {
         val req = Request.Builder().url(url.trimEnd('/') + path)
@@ -66,6 +70,15 @@ class RmsLiveTest {
         assertTrue(owned.me!!.owner)
         assertEquals(Can(add = true, split = true, host = true), owned.can)
         assertEquals(listOf(owned), Servers.list.value)
+        // its own id, the same at any address, kept
+        assertNotNull(owned.id)
+        assertEquals(Rms(base).status().id, owned.id)
+        // the owner's phone hears the server's changes as they happen (in place of asking again and again)
+        val heard = CopyOnWriteArrayList<Events.Event>()
+        val listening = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch { Events.watch(owned).collect { heard += it } }
+        waitFor { heard.any { it is Events.Event.Hello } }
+        assertEquals(Events.Event.Hello(owned.id, "Bassi's server"), heard.first { it is Events.Event.Hello })
+        assertTrue(Events.up(owned.base).value)
         // the same invite again: used up, in the server's words
         val again = runCatching { Servers.join(ownersLink) }.exceptionOrNull()
         assertEquals(410, (again as Refused).code)
@@ -91,6 +104,8 @@ class RmsLiveTest {
         )
         val up = upload()
         assertTrue(up.added)
+        // the owner's phone heard: the library changed
+        waitFor { Events.Event.Library in heard }
         assertEquals(listOf("cover"), up.extras)
         assertTrue(upload().skipped)
         val songs = Servers.library(owned)
@@ -101,6 +116,12 @@ class RmsLiveTest {
         assertEquals(base + "/files/Maki%20-%20Dilaw.$ext", dilaw.url)
         // known now by its key (the Mixer, the lyrics and saving find it)
         assertEquals(dilaw, Servers.song(dilaw.track())?.second)
+        // one song by its id, and a search there (a big library's way), not the whole library
+        assertEquals(dilaw, owned.rms.song(dilaw.id))
+        val search = owned.rms.page(q = "maki dilaw", limit = 50)
+        assertEquals(1, search.total)
+        assertEquals(dilaw.id, search.songs.single().id)
+        assertEquals(0, owned.rms.page(q = "nothing like it").total)
 
         // 4. it streams, with the key in its address (as the player asks), and seeks (HTTP Range)
         val signed = Servers.sign(dilaw.url)
@@ -126,6 +147,8 @@ class RmsLiveTest {
         val asked = ana.split(dilaw.id)
         assertTrue(asked.queued)
         assertTrue(asked.job!!.waiting)
+        // the owner's phone heard the queue, with it in it
+        waitFor { heard.any { it is Events.Event.Queued && it.queue.of(dilaw.id) != null } }
         val q = ana.queue()
         val job = q.of(dilaw.id)!!
         assertEquals("Ana", job.askedBy?.name)
@@ -136,11 +159,31 @@ class RmsLiveTest {
         assertFalse(ana.split(dilaw.id).queued)
         // she takes it out; the owner turns splitting off for her: a plain no
         ana.unqueue(job.id)
+        // Ana's own line hears when the owner changes her switches
+        val anasNews = CopyOnWriteArrayList<String>()
+        val anasLine = ana.eventsSocket(object : WebSocketListener() {
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                anasNews += JSONObject(text).optString("type")
+            }
+        })
+        waitFor { "hello" in anasNews }
         call("PATCH", "/api/people/${me.person.id}", browser, JSONObject().put("can_split", false))
+        waitFor { "me" in anasNews }
+        anasLine.close(1000, null)
         assertFalse(ana.me().can.split)
         val no = runCatching { ana.split(dilaw.id) }.exceptionOrNull() as Refused
         assertEquals(403, no.code)
         assertTrue(no.words, no.words.contains("Bassi") && no.words.contains("turned off splitting"))
+        // but split on her phone, it brings its parts (the same switch as adding songs)
+        heard.clear()
+        val parts = listOf("drums", "bass", "other", "vocals").associateWith { p -> Rms.Upload("Maki - Dilaw.$p.m4a", 2_000, "audio/mp4") { ByteArray(2_000) { 7 }.inputStream() } }
+        val brought = ana.uploadParts(dilaw.id, parts)
+        assertEquals(listOf("drums", "bass", "other", "vocals"), brought.added)
+        assertTrue(brought.song!!.split)
+        assertTrue(owned.rms.song(dilaw.id).split)
+        waitFor { Events.Event.Library in heard }
+        // again: the server has them, so they're skipped
+        assertEquals(4, ana.uploadParts(dilaw.id, parts).skipped.size)
 
         // 6. a listening party: Ana hosts it; one at a time
         val started = ana.startParty(everyoneControls = false)
@@ -190,12 +233,34 @@ class RmsLiveTest {
         waitFor { states.lastOrNull()?.on == false }
         socket.close(1000, null)
 
-        // 7. Ana's phone leaves: its key stops working there
+        listening.cancel()
+
+        // 7. the join page's "Open in Radiance Music": the app's own link, with the invite in it
+        val rads = call("POST", "/api/invites", browser, JSONObject().put("name", "Rad")).getString("link")
+        val page = Http.client.newCall(Request.Builder().url(rads).build()).execute().use { it.body.string() }
+        val appLink = Regex("""radiancemusic://join\?u=[^"'<\s]+""").find(page)?.value?.replace("&amp;", "&")
+        assertNotNull(page, appLink)
+        assertEquals(rads, Servers.joinLink(appLink!!))
+        assertEquals(Servers.invite(rads), Servers.invite(appLink))
+
+        // 8. the server at a new address (its owner gave it a domain): the same id, so it moves, and your songs from it follow
+        val moves = mutableListOf<Pair<String, String>>()
+        Servers.onMoved = { a, b -> moves += a to b }
+        val newAddress = base.replace("127.0.0.1", "localhost")
+        val moved = Servers.move(owned, newAddress)
+        assertEquals(newAddress, moved.base)
+        assertEquals(owned.token, moved.token)
+        assertEquals(listOf(base to newAddress), moves)
+        assertEquals("Bassi's server", moved.rms.me().server)
+        assertEquals(listOf(moved), Servers.list.value)
+        Servers.onMoved = null
+
+        // 9. Ana's phone leaves: its key stops working there
         ana.leave(me.device)
         val gone = runCatching { ana.me() }.exceptionOrNull() as Refused
         assertTrue(gone.removed)
         // the owner's phone leaves too (the owner keeps the browser's device)
-        Servers.leave(owned)
+        Servers.leave(moved)
         assertTrue(Servers.list.value.isEmpty())
         assertTrue((runCatching { owned.rms.me() }.exceptionOrNull() as Refused).removed)
     }

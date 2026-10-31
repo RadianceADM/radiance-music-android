@@ -20,6 +20,11 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.dp
 import io.github.radianceadm.music.server.Can
 import io.github.radianceadm.music.server.Health
@@ -82,7 +87,7 @@ class ServersTest {
     }
 
     private val bassi = Server("https://music.bassi.ph", "t1", "Bassi's server", Person(2, "Ana"), 5, Can(add = true, split = true, host = true))
-    private val rad = Server("http://203.0.113.5:8080", "t2", "Rad's server", Person(9, "Ana"), 3, Can(add = false, split = true, host = false))
+    private val rad = Server("http://203.0.113.5:8080", "t2", "Rad's server", Person(9, "Ana"), 3, Can(add = false, split = true, host = false), id = "srv-rad")
 
     private fun song(id: Long, artist: String, title: String, seconds: Long, split: Boolean = false, by: String? = null) = ServerSong(
         id, artist, title, "$artist - $title.opus", "https://music.bassi.ph/files/$id.opus", seconds * 1000, split,
@@ -146,6 +151,43 @@ class ServersTest {
         // adding songs and starting parties: off for Ana there
         assertEquals(2, rule.onAllNodesWithText("Turned off for you by Rad").fetchSemanticsNodes().size)
         rule.onNodeWithText("Leave this server").assertExists()
+        // a server that knows its own id can move (its owner gave it a domain)
+        rule.onNodeWithText("It moved to a new address").assertExists()
+    }
+
+    @Test fun joinFromTheJoinPage() {
+        // radiancemusic://join?u=… opened: the sheet filled in, you just confirm
+        sheet("server-11-join-from-link") { JoinPanel(onOpen = {}, onDone = {}, given = "https://music.bassi.ph/join/ABCD-EFGH-JKLM") }
+        rule.onNodeWithText("An invite to the server at music.bassi.ph. Join it with this phone?").assertExists()
+        rule.onNodeWithText("https://music.bassi.ph/join/ABCD-EFGH-JKLM").assertExists()
+        rule.onNodeWithText("Join").assertIsEnabled()
+    }
+
+    @Test fun aBigLibrary() {
+        Servers.pretend(listOf(bassi))
+        shot("server-12-library-big") { ServerLibraryView(PaddingValues(), bassi, ShelfUi(songs = songs, total = 1234, party = PartyState.OFF), header = { header() }) }
+        rule.onNodeWithText("music.bassi.ph · 1234 songs").assertExists()
+        rule.onNodeWithText("Showing 7 of 1234 songs. Search to find any of them.").assertExists()
+    }
+
+    @Test fun aBigLibrarysSearchIsDoneThere() {
+        Servers.pretend(listOf(bassi))
+        var asked = ""
+        val found = listOf(songs[3])
+        rule.setContent {
+            RadianceTheme {
+                Surface(color = Brand.Night, contentColor = Color.White) {
+                    var ui by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(ShelfUi(songs = songs, total = 1234, party = PartyState.OFF)) }
+                    ServerLibraryView(PaddingValues(), bassi, ui, header = { header() }, onSearch = { q -> asked = q; if (q == "dilaw") ui = ui.copy(found = q to found) })
+                }
+            }
+        }
+        rule.onNode(hasSetTextAction()).performTextInput("dilaw")
+        rule.waitForIdle()
+        assertEquals("dilaw", asked)
+        rule.onNodeWithText("Dilaw").assertExists()
+        rule.onNodeWithText("Araw-Araw").assertDoesNotExist()
+        save("server-13-library-big-search")
     }
 
     @Composable

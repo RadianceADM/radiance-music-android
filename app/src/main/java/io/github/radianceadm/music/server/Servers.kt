@@ -19,7 +19,9 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * A Radiance Music Server this phone joined (Settings → Servers): where it
  * is, this phone's key for it, its name ("Bassi's server"), who you are
- * there and what its owner lets you do (as last heard).
+ * there and what its owner lets you do (as last heard). Its [id] is its own,
+ * the same at any address: the owner adding a domain moves it, it doesn't
+ * make it another server.
  */
 data class Server(
     /** "https://music.example.com" (or "http://203.0.113.5:8080"). */
@@ -31,19 +33,21 @@ data class Server(
     val device: Long = 0,
     val can: Can = Can(),
     val joinedMs: Long = 0,
+    /** The server's own id (from 0.1.2; null: not heard yet). */
+    val id: String? = null,
 ) {
     val rms get() = Rms(base, token)
     /** Its address as you'd say it: "music.example.com". */
     val host get() = base.substringAfter("://")
 
     fun toJson(): JSONObject = JSONObject().put("base", base).put("token", token).put("name", name)
-        .put("me", me?.toJson() ?: JSONObject.NULL).put("device", device).put("can", can.toJson()).put("joined_ms", joinedMs)
+        .put("me", me?.toJson() ?: JSONObject.NULL).put("device", device).put("can", can.toJson()).put("joined_ms", joinedMs).put("id", id ?: JSONObject.NULL)
 
     companion object {
         fun from(o: JSONObject): Server? {
             val base = o.str("base") ?: return null
             val token = o.str("token") ?: return null
-            return Server(base, token, o.str("name") ?: base.substringAfter("://"), Person.from(o.optJSONObject("me")), o.optLong("device"), Can.from(o.optJSONObject("can")), o.optLong("joined_ms"))
+            return Server(base, token, o.str("name") ?: base.substringAfter("://"), Person.from(o.optJSONObject("me")), o.optLong("device"), Can.from(o.optJSONObject("can")), o.optLong("joined_ms"), o.str("id"))
         }
     }
 }
@@ -81,6 +85,16 @@ object Servers {
 
     /** The server whose library to show (Settings → "Open its library"): Library opens on it. */
     val open = MutableStateFlow<String?>(null)
+
+    /** An invite opened from outside (the server's join page: radiancemusic://join?u=…): Settings → Servers asks to join it. */
+    val asked = MutableStateFlow<String?>(null)
+
+    /**
+     * A server moved ([old] address → [new]): the app's songs from it follow
+     * (App: the library, the files kept by a song's key). Called before the
+     * move is kept.
+     */
+    @Volatile var onMoved: ((old: String, new: String) -> Unit)? = null
 
     /** Songs each server had when last asked, by the song's key: for the Mixer's parts, the lyrics, saving. */
     private val songs = ConcurrentHashMap<String, Pair<String, ServerSong>>()
@@ -162,6 +176,8 @@ object Servers {
      * the words, with or without https://). null: there's no invite in it.
      */
     fun invite(text: String): Invite? {
+        // the join page's "Open in Radiance Music": the invite inside it
+        joinLink(text.trim())?.let { if (it != text.trim()) return invite(it) }
         val found = Regex("""(?:(https?)://)?([A-Za-z0-9.\-]+|\[[0-9A-Fa-f:.]+])(:\d{1,5})?/join/([A-Za-z0-9\-]{4,40})""").find(text.trim()) ?: return null
         val (scheme, host, port, code) = found.destructured
         // a link without its https://: a name gets https, a bare address (a server without a domain) http
@@ -171,6 +187,14 @@ object Servers {
         val plain = code.filter { it.isLetterOrDigit() }
         if (plain.length < 4) return null
         return Invite(base, code)
+    }
+
+    /** The invite in an app link, `radiancemusic://join?u=<the invite's address>` (null: it isn't one). */
+    fun joinLink(link: String): String? {
+        if (!link.startsWith("radiancemusic://join")) return null
+        val q = link.substringAfter('?', "")
+        val u = q.split('&').firstNotNullOfOrNull { kv -> kv.substringAfter("u=", "").takeIf { kv.startsWith("u=") } } ?: return null
+        return runCatching { java.net.URLDecoder.decode(u, "UTF-8") }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() }
     }
 
     /**
@@ -184,15 +208,53 @@ object Servers {
         val joined = Rms(inv.base).join(inv.code, deviceName)
         val rms = Rms(inv.base, joined.token)
         val me = runCatching { rms.me() }.getOrNull()
-        val name = joined.server ?: me?.server ?: runCatching { rms.status().server }.getOrNull() ?: inv.base.substringAfter("://")
-        val server = Server(inv.base, joined.token, name, me?.person ?: joined.person, me?.device ?: joined.device, me?.can ?: Can(), System.currentTimeMillis())
-        val before = byBase(inv.base)
-        // joined here already (a new invite for this phone): the old key goes
-        if (before != null && before.token != joined.token) runCatching { before.rms.leave(before.device) }
-        save(_list.value.filterNot { it.base == inv.base } + server)
+        val status = if (joined.server == null || (joined.serverId ?: me?.serverId) == null) runCatching { rms.status() }.getOrNull() else null
+        val name = joined.server ?: me?.server ?: status?.server ?: inv.base.substringAfter("://")
+        val id = joined.serverId ?: me?.serverId ?: status?.id
+        val server = Server(inv.base, joined.token, name, me?.person ?: joined.person, me?.device ?: joined.device, me?.can ?: Can(), System.currentTimeMillis(), id)
+        // joined here already (a new invite for this phone), or the same server at its new address: the old key goes, the new one takes its place
+        val before = byBase(inv.base) ?: id?.let { i -> _list.value.firstOrNull { it.id == i } }
+        if (before != null && before.token != joined.token) runCatching { Rms(inv.base, before.token).leave(before.device) }
+        if (before != null && before.base != inv.base) moved(before.base, inv.base)
+        save(if (before == null) _list.value + server else _list.value.map { if (it === before) server else it })
         healthy(server.base, Health.Answering)
         return server
     }
+
+    /**
+     * [s] is at [address] now (its owner added a domain, say): the same server
+     * (its id says so) with this phone's same key, at its new address. Waits
+     * for the network; not the same server, or not answering: why.
+     */
+    fun move(s: Server, address: String): Server {
+        val typed = address.trim().let { if ("://" in it) it else "https://$it" }
+        val base = Rms.origin(typed) ?: fail("That isn't an address. It looks like https://music.example.com.")
+        if (base == s.base) return s
+        val there = Rms(base, s.token)
+        val id = there.status().id
+        if (s.id == null || id != s.id) fail("That's another server, not ${s.name}. Check the address with ${ownerOf(s)}.")
+        val me = there.me()
+        val now = s.copy(base = base, name = me.server ?: s.name, me = me.person, can = me.can)
+        moved(s.base, base)
+        save(_list.value.map { if (it.base == s.base) now else it })
+        healthy(base, Health.Answering)
+        return now
+    }
+
+    /** The songs, caches and screens following a server from [old] to [new]. */
+    private fun moved(old: String, new: String) {
+        runCatching { onMoved?.invoke(old, new) }
+        _health.value = _health.value - old
+        songs.entries.removeIf { it.value.first == old }
+        lists.remove(old)
+        if (open.value == old) open.value = new
+    }
+
+    /**
+     * A server song's address at [new] in place of [old] (the same file there):
+     * null when [url] isn't one of [old]'s.
+     */
+    fun rebased(url: String, old: String, new: String): String? = if (url.startsWith("$old/")) new + url.removePrefix(old) else null
 
     /**
      * Leaves [s]: this phone's key stops working there ([onServer]), and the
@@ -220,7 +282,7 @@ object Servers {
             heard(s, e)
             throw e
         }
-        val now = s.copy(name = me.server ?: s.name, me = me.person, device = me.device.takeIf { it > 0 } ?: s.device, can = me.can)
+        val now = s.copy(name = me.server ?: s.name, me = me.person, device = me.device.takeIf { it > 0 } ?: s.device, can = me.can, id = s.id ?: me.serverId)
         if (now != s) save(_list.value.map { if (it.base == s.base) now else it })
         healthy(s.base, Health.Answering)
         return now
@@ -257,8 +319,8 @@ object Servers {
         return list
     }
 
-    fun remember(s: Server, list: List<ServerSong>) {
-        lists[s.base] = list
+    fun remember(s: Server, list: List<ServerSong>, whole: Boolean = true) {
+        if (whole) lists[s.base] = list
         for (song in list) songs[song.track().key] = s.base to song
     }
 
@@ -272,11 +334,42 @@ object Servers {
         return byBase(base)?.let { it to song }
     }
 
-    /** Like [song], asking the server again when it isn't known yet (waits for the network). */
+    /**
+     * Like [song], asking the server when it isn't known yet: a search for its
+     * file's name (not the whole library). Waits for the network.
+     */
     fun find(t: Track): Pair<Server, ServerSong>? {
         song(t)?.let { return it }
         val s = of(t) ?: return null
-        runCatching { library(s) }
-        return song(t)
+        val name = java.net.URLDecoder.decode(t.id.substringAfterLast("/files/").substringBefore('?'), "UTF-8")
+        val found = runCatching { s.rms.page(q = name.substringBeforeLast('.')) }.getOrNull()?.songs ?: return null
+        found.firstOrNull { it.url == t.id }?.let { remember(s, listOf(it), whole = false); return s to it }
+        return null
+    }
+
+    /** [id] on [s] as it is now (one song, not the whole library), kept. Waits for the network. */
+    fun fresh(s: Server, id: Long): ServerSong {
+        val song = try {
+            s.rms.song(id)
+        } catch (e: Exception) {
+            heard(s, e)
+            throw e
+        }
+        songs[song.track().key] = s.base to song
+        lists[s.base]?.let { list -> lists[s.base] = list.map { if (it.id == id) song else it } }
+        return song
+    }
+
+    /** A page of [s]'s songs (a big library: some at a time, or a search there), kept. Waits for the network. */
+    fun page(s: Server, q: String? = null, offset: Int = 0, limit: Int? = null): Page {
+        val page = try {
+            s.rms.page(q, offset, limit)
+        } catch (e: Exception) {
+            heard(s, e)
+            throw e
+        }
+        healthy(s.base, Health.Answering)
+        for (song in page.songs) songs[song.track().key] = s.base to song
+        return page
     }
 }

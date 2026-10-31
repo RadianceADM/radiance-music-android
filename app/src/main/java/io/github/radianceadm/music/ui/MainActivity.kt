@@ -65,10 +65,14 @@ class MainActivity : ComponentActivity() {
         opened(intent)
     }
 
-    /** A Radiance Music share's QR read by the phone's camera: straight to it. */
+    /** A Radiance Music share's QR read by the phone's camera: straight to it. A server's invite (its join page): Settings → Servers, to join. */
     private fun opened(intent: Intent?) {
         val data = intent?.data ?: return
         if (data.scheme != "radiancemusic") return
+        Servers.joinLink(data.toString())?.let {
+            Servers.asked.value = it
+            return
+        }
         App.instance.share.scanned(data.toString())
         App.instance.shareOpen.value = App.ShareAsk(null)
     }
@@ -98,6 +102,9 @@ private fun Radiance() {
     var settings by rememberSaveable { mutableStateOf(false) }
     // the listening party's screen (you're in one): the mini player opens it in place of Now Playing
     var party by rememberSaveable { mutableStateOf(false) }
+    // a server's invite opened from its join page: Settings, where Servers asks to join it
+    val asked by Servers.asked.collectAsState()
+    LaunchedEffect(asked) { if (asked != null) settings = true }
     val ctx = LocalContext.current
     // how to use it: the first time the app opens (under the start's splash, seen as it opens)
     var guide by rememberSaveable { mutableStateOf(Guide.due(ctx)) }

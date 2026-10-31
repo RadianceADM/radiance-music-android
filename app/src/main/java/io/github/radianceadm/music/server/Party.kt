@@ -257,6 +257,11 @@ class Party(private val app: App) {
                 }
             }
 
+            // the server closes it (it's stopping, or this phone was removed): closed from here too
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                webSocket.close(1000, null)
+            }
+
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 main.launch { if (r == round) lost(r, s, if (response?.code == 401) Refused(401, "removed") else t) }
             }

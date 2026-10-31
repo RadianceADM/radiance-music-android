@@ -61,10 +61,42 @@ class Rms(base: String, val token: String? = null, private val client: OkHttpCli
     // ── the library ──
 
     /** Every song on the server, A to Z by artist. */
-    fun library(): List<ServerSong> {
-        val o = get("/api/library")
+    fun library(): List<ServerSong> = page().songs
+
+    /**
+     * Some of the songs: the ones matching [q] (every word in the artist,
+     * title or file name; null: all), from [offset], at most [limit] (null:
+     * all of them). The page says how many match in all.
+     */
+    fun page(q: String? = null, offset: Int = 0, limit: Int? = null): Page {
+        val url = file("/api/library").toHttpUrlOrNull()!!.newBuilder().apply {
+            q?.trim()?.takeIf { it.isNotEmpty() }?.let { addQueryParameter("q", it) }
+            if (offset > 0) addQueryParameter("offset", offset.toString())
+            limit?.let { addQueryParameter("limit", it.toString()) }
+        }.build().toString()
+        val o = get(url)
         val list = o.optJSONArray("songs") ?: JSONArray()
-        return (0 until list.length()).mapNotNull { list.optJSONObject(it)?.let { s -> ServerSong.from(s, ::file) } }
+        val songs = (0 until list.length()).mapNotNull { list.optJSONObject(it)?.let { s -> ServerSong.from(s, ::file) } }
+        return Page(songs, o.optInt("total", songs.size), o.optInt("offset", offset))
+    }
+
+    /** One song, by its id (as it is now: split meanwhile, its lyrics timed…). */
+    fun song(id: Long): ServerSong = ServerSong.from(get("/api/songs/$id"), ::file) ?: throw Refused(500, "The server's answer about that song didn't make sense.")
+
+    /**
+     * A song split on this phone brings its [parts] (drums, bass, other,
+     * vocals: their files) to the server's copy of it, [song], with its
+     * [lyrics] maybe. The parts the server has already are skipped.
+     */
+    fun uploadParts(song: Long, parts: Map<String, Upload>, lyrics: Upload? = null, progress: (Long) -> Unit = {}): PartsAdded {
+        var sent = 0L
+        val counted = { n: Long -> sent += n; progress(sent) }
+        val form = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .apply { parts.forEach { (part, f) -> addFormDataPart(part, f.name, f.body(counted)) } }
+            .apply { lyrics?.let { addFormDataPart("lyrics", it.name, it.body(counted)) } }
+            .build()
+        val slow = client.newBuilder().writeTimeout(0, TimeUnit.SECONDS).readTimeout(5, TimeUnit.MINUTES).build()
+        return PartsAdded.from(call(request("/api/songs/$song/parts").post(form).build(), slow), ::file)
     }
 
     /**
@@ -141,9 +173,14 @@ class Rms(base: String, val token: String? = null, private val client: OkHttpCli
     fun endParty(): PartyState = PartyState.from(post("/api/party/end", JSONObject()), ::file)
 
     /** The party's WebSocket: its whole state on every change (`?t=` carries the key: a WebSocket can't take a header everywhere). */
-    fun partySocket(listener: WebSocketListener): WebSocket {
+    fun partySocket(listener: WebSocketListener): WebSocket = socket("/api/party/ws", listener)
+
+    /** The server's changes as they happen (in place of asking again and again): the library, the split queue, you. */
+    fun eventsSocket(listener: WebSocketListener): WebSocket = socket("/api/events", listener)
+
+    private fun socket(path: String, listener: WebSocketListener): WebSocket {
         val ws = client.newBuilder().readTimeout(0, TimeUnit.MILLISECONDS).pingInterval(20, TimeUnit.SECONDS).build()
-        return ws.newWebSocket(Request.Builder().url(withKey("$base/api/party/ws")).header("User-Agent", Http.USER_AGENT).build(), listener)
+        return ws.newWebSocket(Request.Builder().url(withKey(base + path)).header("User-Agent", Http.USER_AGENT).build(), listener)
     }
 
     // ── addresses ──
@@ -229,18 +266,20 @@ data class Person(val id: Long, val name: String, val role: String = "friend") {
     }
 }
 
-data class Joined(val token: String, val person: Person, val device: Long, val server: String?) {
+/** [serverId]: the server's own id, the same at any address (null: a server older than 0.1.2). */
+data class Joined(val token: String, val person: Person, val device: Long, val server: String?, val serverId: String? = null) {
     companion object {
         fun from(o: JSONObject) = Joined(
             o.str("token") ?: throw Refused(500, "The server didn't give this phone a key. Try again."),
             Person.from(o.optJSONObject("person")) ?: Person(0, ""),
             o.optJSONObject("device")?.optLong("id") ?: 0,
             o.optJSONObject("server")?.str("name"),
+            o.optJSONObject("server")?.str("id"),
         )
     }
 }
 
-data class Me(val person: Person, val device: Long, val deviceName: String, val server: String?, val can: Can) {
+data class Me(val person: Person, val device: Long, val deviceName: String, val server: String?, val can: Can, val serverId: String? = null) {
     companion object {
         fun from(o: JSONObject) = Me(
             Person.from(o.optJSONObject("person")) ?: Person(0, ""),
@@ -248,18 +287,37 @@ data class Me(val person: Person, val device: Long, val deviceName: String, val 
             o.optJSONObject("device")?.str("name").orEmpty(),
             o.optJSONObject("server")?.str("name"),
             Can.from(o.optJSONObject("can")),
+            o.optJSONObject("server")?.str("id"),
         )
     }
 }
 
-/** GET /api/status: the server's name, and how its splitter is getting on. */
-data class Status(val server: String?, val needsSetup: Boolean, val version: String, val splitterReady: Boolean, val splitterMessage: String, val models: String, val modelsMessage: String) {
+/** GET /api/status: the server's name and its own [id], and how its splitter is getting on. */
+data class Status(val server: String?, val needsSetup: Boolean, val version: String, val splitterReady: Boolean, val splitterMessage: String, val models: String, val modelsMessage: String, val id: String? = null) {
     companion object {
         fun from(o: JSONObject): Status {
             val s = o.optJSONObject("splitter")
             val m = o.optJSONObject("models")
-            return Status(o.str("server"), o.optBoolean("needs_setup"), o.optString("version"), s?.optBoolean("ready") ?: false, s?.str("message").orEmpty(), m?.str("state").orEmpty(), m?.str("message").orEmpty())
+            return Status(o.str("server"), o.optBoolean("needs_setup"), o.optString("version"), s?.optBoolean("ready") ?: false, s?.str("message").orEmpty(), m?.str("state").orEmpty(), m?.str("message").orEmpty(), o.str("id"))
         }
+    }
+}
+
+/** A page of the library: [songs] from [offset], of [total] that match. */
+data class Page(val songs: List<ServerSong>, val total: Int, val offset: Int = 0) {
+    /** More match than came. */
+    val more get() = offset + songs.size < total
+}
+
+/** POST /api/songs/ID/parts's answer: the parts it kept, the ones it had already, its lyrics kept or not, the song now. */
+data class PartsAdded(val added: List<String>, val skipped: List<String>, val lyrics: Boolean, val song: ServerSong?) {
+    companion object {
+        fun from(o: JSONObject, whole: (String) -> String) = PartsAdded(
+            o.optJSONArray("added")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList(),
+            o.optJSONArray("skipped")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList(),
+            o.optBoolean("lyrics"),
+            o.optJSONObject("song")?.let { ServerSong.from(it, whole) },
+        )
     }
 }
 

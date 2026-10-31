@@ -64,6 +64,13 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="radiancemusic" android:host="share" />
             </intent-filter>
+            <!-- a Radiance Music Server's join page ("Open in Radiance Music"): its invite, to join here -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="radiancemusic" android:host="join" />
+            </intent-filter>
         </activity>
 
         <!-- plays in the background: the notification, the lock screen, Bluetooth buttons -->

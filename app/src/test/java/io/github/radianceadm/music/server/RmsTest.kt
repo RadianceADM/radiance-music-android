@@ -12,6 +12,10 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.flow.toList
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -47,6 +51,8 @@ class RmsTest {
     @After fun stop() {
         server.close()
         Servers.pretend(emptyList())
+        Servers.onMoved = null
+        Events.firstBackoff = 1000
     }
 
     private fun json(body: String, code: Int = 200) = MockResponse(code, headersOf("Content-Type", "application/json"), body)
@@ -331,5 +337,168 @@ class RmsTest {
         assertEquals(listOf(s), Servers.list.value)
         Servers.leave(s, onServer = false)
         assertTrue(Servers.list.value.isEmpty())
+    }
+
+    // ── round 2: the events line, parts, one song, a search, the app link, a server's new address ──
+
+    private fun upgrade(vararg sends: String, close: Boolean = false) = MockResponse.Builder().webSocketUpgrade(object : WebSocketListener() {
+        override fun onOpen(webSocket: WebSocket, response: Response) {
+            sends.forEach { webSocket.send(it) }
+            if (close) webSocket.close(1000, "bye")
+        }
+
+        override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+            webSocket.close(1000, null)
+        }
+    }).build()
+
+    private val queueEvent = """{"type": "queue", "splitter": {"ready": true, "message": "Ready."}, "models": {"state": "ready", "message": "Ready."}, "next_turn": {"id": 2, "name": "Ana"},
+        "jobs": [{"id": 31, "song": {"id": 7, "artist": "Maki", "title": "Dilaw"}, "asked_by": {"id": 2, "name": "Ana"}, "state": "splitting", "progress": 0.5, "note": "Splitting (50 %)."}]}"""
+
+    @Test fun theServersChangesComeAsTheyHappen() = kotlinx.coroutines.runBlocking {
+        val s = Server(base, "tok-ev", "Bassi's server", id = "srv-1")
+        Servers.pretend(listOf(s))
+        server.enqueue(upgrade("""{"type": "hello", "server": {"id": "srv-1", "name": "Bassi's server"}}""", """{"type": "library"}""", queueEvent, """{"type": "me"}"""))
+        val ups = mutableListOf<Boolean>()
+        val got = kotlinx.coroutines.withTimeout(5_000) { Events.watch(s).onEach { ups += Events.up(s.base).value }.take(4).toList() }
+        // up while it listened: the screens don't look again by themselves meanwhile
+        assertEquals(listOf(true, true, true, true), ups)
+        assertEquals(Events.Event.Hello("srv-1", "Bassi's server"), got[0])
+        assertEquals(Events.Event.Library, got[1])
+        val q = (got[2] as Events.Event.Queued).queue
+        assertEquals("Splitting (50 %).", q.of(7)?.note)
+        assertEquals("Ana", q.nextTurn?.name)
+        assertEquals(Events.Event.Me, got[3])
+        val req = server.takeRequest()
+        assertEquals("/api/events", req.url.encodedPath)
+        assertEquals("tok-ev", req.url.queryParameter("t"))
+    }
+
+    @Test fun theEventsLineJoinsAgainWhenItDrops() = kotlinx.coroutines.runBlocking {
+        Events.firstBackoff = 50
+        val s = Server(base, "tok-ev2", "Bassi's server")
+        Servers.pretend(listOf(s))
+        // the first line drops at once; the second brings the news
+        server.enqueue(upgrade("""{"type": "hello", "server": {"id": "srv-1", "name": "Bassi's server"}}""", close = true))
+        server.enqueue(upgrade("""{"type": "library"}"""))
+        val got = kotlinx.coroutines.withTimeout(5_000) { Events.watch(s).take(2).toList() }
+        assertEquals(listOf(Events.Event.Hello("srv-1", "Bassi's server"), Events.Event.Library), got)
+        assertEquals(2, server.requestCount)
+        // nobody listening now: the line's closed
+        assertFalse(Events.up(s.base).value)
+    }
+
+    @Test fun removedTheEventsLineSaysSoAndStops() = kotlinx.coroutines.runBlocking {
+        Events.firstBackoff = 50
+        val s = Server(base, "tok-gone", "Bassi's server")
+        Servers.pretend(listOf(s))
+        server.enqueue(json("""{"error": "This device isn't joined to the server, or it was removed."}""", 401))
+        val got = kotlinx.coroutines.withTimeout(5_000) { Events.watch(s).first() }
+        assertEquals(Events.Event.Me, got)
+        assertEquals(Health.Removed("This phone was removed from Bassi's server. Ask Bassi for a new invite."), Servers.health.value[s.base])
+        Thread.sleep(300)
+        // not tried again
+        assertEquals(1, server.requestCount)
+        assertFalse(Events.up(s.base).value)
+    }
+
+    @Test fun aSongSplitHereBringsItsParts() {
+        server.enqueue(json("""{"added": ["drums", "bass", "other"], "skipped": ["vocals"], "lyrics": false, "song": $dilaw}""", 201))
+        val parts = listOf("drums", "bass", "other", "vocals").associateWith { p -> Rms.Upload("Maki - Dilaw.$p.m4a", 5, "audio/mp4") { "12345".byteInputStream() } }
+        var sent = 0L
+        val got = Rms(base, "tok").uploadParts(7, parts) { sent = it }
+        assertEquals(listOf("drums", "bass", "other"), got.added)
+        assertEquals(listOf("vocals"), got.skipped)
+        assertTrue(got.song!!.split)
+        assertEquals(20L, sent)
+        val req = server.takeRequest()
+        assertEquals("POST", req.method)
+        assertEquals("/api/songs/7/parts", req.url.encodedPath)
+        assertEquals("Bearer tok", req.headers["Authorization"])
+        val form = req.body!!.string(Charsets.ISO_8859_1)
+        for (p in listOf("drums", "bass", "other", "vocals")) assertTrue(p, form.contains("name=\"$p\"; filename=\"Maki - Dilaw.$p.m4a\""))
+    }
+
+    @Test fun oneSongAndASearchNotTheWholeLibrary() {
+        server.enqueue(json(dilaw))
+        val d = Rms(base, "tok").song(7)
+        assertEquals("Dilaw", d.title)
+        assertEquals("/api/songs/7", server.takeRequest().url.encodedPath)
+        // a big library's page, and a search there
+        server.enqueue(json("""{"server": "Bassi's server", "total": 1234, "offset": 0, "count": 1, "songs": [$dilaw]}"""))
+        val page = Rms(base, "tok").page(q = "maki dilaw", limit = 200)
+        assertEquals(1234, page.total)
+        assertTrue(page.more)
+        val req = server.takeRequest()
+        assertEquals("maki dilaw", req.url.queryParameter("q"))
+        assertEquals("200", req.url.queryParameter("limit"))
+        // a song not known yet (played from History): found by its file's name, not by fetching every song
+        val s = Server(base, "tok", "Bassi's server")
+        Servers.pretend(listOf(s))
+        server.enqueue(json("""{"server": "Bassi's server", "total": 1, "offset": 0, "count": 1, "songs": [$dilaw]}"""))
+        val t = io.github.radianceadm.music.model.Track(Source.SERVER, "$base/files/Maki%20-%20Dilaw.opus", "Dilaw", "Maki")
+        assertEquals(7L, Servers.find(t)?.second?.id)
+        val search = server.takeRequest()
+        assertEquals("/api/library", search.url.encodedPath)
+        assertEquals("Maki - Dilaw", search.url.queryParameter("q"))
+        // known now: one song, asked again by its id
+        server.enqueue(json(dilaw))
+        assertEquals(7L, Servers.fresh(s, 7).id)
+        assertEquals("/api/songs/7", server.takeRequest().url.encodedPath)
+    }
+
+    @Test fun theJoinPagesAppLink() {
+        val invite = "https://music.example.com/join/ABCD-EFGH-JKLM"
+        val link = "radiancemusic://join?u=" + java.net.URLEncoder.encode(invite, "UTF-8")
+        assertEquals(invite, Servers.joinLink(link))
+        assertEquals(Servers.Invite("https://music.example.com", "ABCD-EFGH-JKLM"), Servers.invite(link))
+        assertNull(Servers.joinLink("radiancemusic://share?v=1&m=get&k=abc"))
+        assertNull(Servers.joinLink("radiancemusic://join"))
+        assertNull(Servers.joinLink(invite))
+    }
+
+    @Test fun theSameServerAtANewAddressMovesNotAnother() {
+        // two addresses for the one pretend server: 127.0.0.1 and localhost
+        val port = server.port
+        val old = "http://127.0.0.1:$port"
+        val new = "http://localhost:$port"
+        val s = Server(old, "tok-old", "Bassi's server", Person(2, "Ana"), device = 5, id = "srv-1")
+        Servers.pretend(listOf(Server("https://other.example", "t9", "Rad's server", id = "srv-9"), s))
+        val moves = mutableListOf<Pair<String, String>>()
+        Servers.onMoved = { a, b -> moves += a to b }
+        // a new invite at its new address: the same id, so it's the same server (the old key given back, the new one kept in its place)
+        server.enqueue(json("""{"token": "tok-new", "person": {"id": 2, "name": "Ana", "role": "friend"}, "device": {"id": 8, "name": "Pixel"}, "server": {"name": "Bassi's server", "id": "srv-1"}}""", 201))
+        server.enqueue(json("""{"person": {"id": 2, "name": "Ana", "role": "friend"}, "device": {"id": 8, "name": "Pixel"}, "server": {"name": "Bassi's server", "id": "srv-1"}, "can": {"add": true, "split": true, "host": true}}"""))
+        server.enqueue(json("""{"ok": true}"""))
+        val joined = Servers.join("$new/join/ABCD-EFGH-JKLM", deviceName = "Pixel")
+        assertEquals(new, joined.base)
+        assertEquals("srv-1", joined.id)
+        assertEquals(listOf("Rad's server", "Bassi's server"), Servers.list.value.map { it.name })
+        assertEquals(listOf(new), Servers.list.value.filter { it.id == "srv-1" }.map { it.base })
+        assertEquals(listOf(old to new), moves)
+        server.takeRequest(); server.takeRequest()
+        val gave = server.takeRequest()
+        assertEquals("/api/devices/5/revoke", gave.url.encodedPath)
+        assertEquals("Bearer tok-old", gave.headers["Authorization"])
+
+        // or its new address typed (Settings → the server → It moved): its id says it's the same; this phone's key goes on working
+        Servers.pretend(listOf(s))
+        moves.clear()
+        server.enqueue(json("""{"server": "Bassi's server", "id": "srv-1", "needs_setup": false}"""))
+        server.enqueue(json("""{"person": {"id": 2, "name": "Ana", "role": "friend"}, "device": {"id": 5, "name": "Pixel"}, "server": {"name": "Bassi's server", "id": "srv-1"}, "can": {"add": true, "split": false, "host": true}}"""))
+        val moved = Servers.move(s, "localhost:$port".let { "http://$it" })
+        assertEquals(new, moved.base)
+        assertEquals("tok-old", moved.token)
+        assertEquals(Can(split = false), moved.can)
+        assertEquals(listOf(old to new), moves)
+        assertEquals(listOf(moved), Servers.list.value)
+        // another server answering there: no
+        server.enqueue(json("""{"server": "Someone's server", "id": "srv-2", "needs_setup": false}"""))
+        val no = runCatching { Servers.move(moved, "http://127.0.0.1:$port") }.exceptionOrNull()
+        assertEquals("That's another server, not Bassi's server. Check the address with Bassi.", Errors.say(no, offline = false))
+        assertEquals(listOf(moved), Servers.list.value)
+        // a song's address there, rebased
+        assertEquals("$new/files/x.opus", Servers.rebased("$old/files/x.opus", old, new))
+        assertNull(Servers.rebased("https://other.example/files/x.opus", old, new))
     }
 }

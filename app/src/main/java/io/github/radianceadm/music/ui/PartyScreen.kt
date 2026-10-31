@@ -385,9 +385,19 @@ private fun AddToPartySheet(n: Party.Now, onDone: () -> Unit) {
     var offline by remember { mutableStateOf(false) }
     var tries by remember { mutableStateOf(0) }
     var filter by remember { mutableStateOf("") }
+    var big by remember { mutableStateOf(false) }
+    var found by remember { mutableStateOf<Pair<String, List<ServerSong>>?>(null) }
+    // its songs (a big library: its first page; a search finds the rest there)
     LaunchedEffect(tries) {
         problem = null
-        withContext(Dispatchers.IO) { runCatching { Servers.library(s) } }.fold({ songs = it }, { problem = Errors.server(it, s.name); offline = Errors.offline(it) })
+        withContext(Dispatchers.IO) { runCatching { Servers.page(s, limit = PAGE) } }
+            .fold({ songs = it.songs; big = it.more }, { problem = Errors.server(it, s.name); offline = Errors.offline(it) })
+    }
+    LaunchedEffect(filter, big) {
+        val q = filter.trim()
+        if (!big || q.isEmpty()) return@LaunchedEffect
+        delay(SEARCH_DEBOUNCE_MS)
+        withContext(Dispatchers.IO) { runCatching { Servers.page(s, q = q, limit = 200).songs } }.onSuccess { found = q to it }
     }
     ModalBottomSheet(onDismissRequest = onDone, containerColor = Brand.Sheet) {
         Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
@@ -407,8 +417,13 @@ private fun AddToPartySheet(n: Party.Now, onDone: () -> Unit) {
                 list == null -> Box(Modifier.fillMaxWidth().padding(30.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Brand.Orange) }
                 list.isEmpty() -> Note("${s.name} has no songs yet.")
                 else -> {
-                    val shown = list.filter { filter.isBlank() || matches(it.track(), filter) }
-                    if (shown.isEmpty()) Note("Nothing on ${s.name} matches “$filter”.")
+                    val q = filter.trim()
+                    val shown = when {
+                        q.isEmpty() -> list
+                        big -> found?.takeIf { it.first == q }?.second.orEmpty()
+                        else -> list.filter { matches(it.track(), filter) }
+                    }
+                    if (shown.isEmpty()) Note(if (big && found?.first != q) "Searching ${s.name}…" else "Nothing on ${s.name} matches “$filter”.")
                     LazyColumn(Modifier.height(420.dp)) {
                         itemsIndexed(shown, key = { _, x -> x.id }) { _, song ->
                             Row(

@@ -30,6 +30,7 @@ import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.LibraryAdd
 import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.Refresh
@@ -91,6 +92,16 @@ fun ServersGroup(onOpen: (Server) -> Unit, check: Boolean = true) {
     val health by Servers.health.collectAsState()
     var joining by remember { mutableStateOf(false) }
     var showing by remember { mutableStateOf<String?>(null) }
+    // an invite opened from its join page: the join sheet, filled in (you just confirm)
+    val asked by Servers.asked.collectAsState()
+    var invite by remember { mutableStateOf("") }
+    LaunchedEffect(asked) {
+        asked?.let {
+            invite = it
+            joining = true
+            Servers.asked.value = null
+        }
+    }
     // each one asked who this phone is now (its name, what you can do), and whether it answers
     LaunchedEffect(list.map { it.base }) {
         if (check) for (s in list) launch(Dispatchers.IO) { runCatching { Servers.refresh(s) } }
@@ -102,7 +113,7 @@ fun ServersGroup(onOpen: (Server) -> Unit, check: Boolean = true) {
         }
         SettingsItem(Icons.Rounded.AddLink, "Join a server", "Scan its invite's QR, or paste the link its owner sent you. Play its songs, split on it, join its parties") { joining = true }
     }
-    if (joining) JoinSheet(onOpen = { joining = false; onOpen(it) }, onDone = { joining = false })
+    if (joining) JoinSheet(onOpen = { joining = false; invite = ""; onOpen(it) }, onDone = { joining = false; invite = "" }, link = invite)
     // (left meanwhile: nothing to show)
     val shown = showing?.let { b -> list.firstOrNull { it.base == b } }
     if (shown != null) ServerSheet(shown, health[shown.base], onOpen = { showing = null; onOpen(shown) }, onDone = { showing = null })
@@ -122,18 +133,22 @@ fun serverNote(s: Server, h: Health?): String = when (h) {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun JoinSheet(onOpen: (Server) -> Unit, onDone: () -> Unit) {
+fun JoinSheet(onOpen: (Server) -> Unit, onDone: () -> Unit, link: String = "") {
     ModalBottomSheet(onDismissRequest = onDone, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = Brand.Sheet) {
-        JoinPanel(onOpen, onDone)
+        JoinPanel(onOpen, onDone, given = link)
     }
 }
 
-/** The join sheet's inside ([start]: where it begins; the tests' pictures start it anywhere). */
+/**
+ * The join sheet's inside ([start]: where it begins; the tests' pictures
+ * start it anywhere). [given]: an invite opened from its join page, filled
+ * in: you just confirm.
+ */
 @Composable
-fun JoinPanel(onOpen: (Server) -> Unit, onDone: () -> Unit, start: JoinState = JoinState.Typing) {
+fun JoinPanel(onOpen: (Server) -> Unit, onDone: () -> Unit, start: JoinState = JoinState.Typing, given: String = "") {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var link by remember { mutableStateOf("") }
+    var link by remember(given) { mutableStateOf(given) }
     var state by remember { mutableStateOf(start) }
     val online by Connectivity.online.collectAsState()
     fun join(text: String) {
@@ -182,7 +197,12 @@ fun JoinPanel(onOpen: (Server) -> Unit, onDone: () -> Unit, start: JoinState = J
             }
             else -> {
                 Text("Join a server", style = MaterialTheme.typography.headlineSmall, color = Color.White)
-                Text("A Radiance Music Server's owner invites you: a link, or a QR on their screen. Each invite works once, on one phone, for 7 days.", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
+                val from = Servers.invite(given)?.base?.substringAfter("://")
+                Text(
+                    if (from != null && link == given) "An invite to the server at $from. Join it with this phone?"
+                    else "A Radiance Music Server's owner invites you: a link, or a QR on their screen. Each invite works once, on one phone, for 7 days.",
+                    color = Brand.Dim, style = MaterialTheme.typography.bodyMedium,
+                )
                 Gap(14.dp)
                 TextField(
                     value = link, onValueChange = { link = it; if (state is JoinState.Failed) state = JoinState.Typing },
@@ -240,6 +260,10 @@ fun ServerPanel(s: Server, h: Health?, onOpen: () -> Unit, onDone: () -> Unit) {
     var leaving by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var couldnt by remember { mutableStateOf<String?>(null) }
+    // its new address (its owner added a domain): the same server, by its id
+    var moving by remember { mutableStateOf(false) }
+    var address by remember { mutableStateOf("") }
+    var moveSaid by remember { mutableStateOf<String?>(null) }
     val owner = Servers.ownerOf(s)
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
         Column(Modifier.padding(horizontal = 22.dp)) {
@@ -260,6 +284,29 @@ fun ServerPanel(s: Server, h: Health?, onOpen: () -> Unit, onDone: () -> Unit) {
         Gap(10.dp)
         if (h !is Health.Removed) SheetAction(Icons.Rounded.LibraryMusic, "Open its library") { onOpen() }
         SheetAction(Icons.Rounded.Refresh, "Check again", "Ask it how it is now") { scope.launch(Dispatchers.IO) { runCatching { Servers.refresh(s) } } }
+        if (moving) Column(Modifier.padding(horizontal = 22.dp, vertical = 8.dp)) {
+            Text("Its new address", color = Color.White, style = MaterialTheme.typography.titleMedium)
+            Text("$owner gave it a domain, say. It's the same server, so this phone stays joined, with your songs from it.", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
+            Gap(8.dp)
+            TextField(
+                value = address, onValueChange = { address = it; moveSaid = null }, placeholder = { Text("music.example.com") }, singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
+                shape = RoundedCornerShape(14.dp),
+                colors = TextFieldDefaults.colors(focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent, focusedContainerColor = Brand.Card, unfocusedContainerColor = Brand.Card),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            moveSaid?.let { Text(it, color = Brand.Glow, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp)) }
+            Gap(10.dp)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(onClick = {
+                    scope.launch {
+                        val r = withContext(Dispatchers.IO) { runCatching { Servers.move(s, address) } }
+                        r.onSuccess { onDone() }.onFailure { moveSaid = Errors.server(it, address.trim().ifEmpty { "That address" }) }
+                    }
+                }, enabled = address.isNotBlank(), colors = ButtonDefaults.buttonColors(containerColor = Brand.Orange)) { Labeled(Icons.Rounded.Check, "Use it") }
+                FilledTonalButton(onClick = { moving = false }, colors = tonal()) { Labeled(Icons.Rounded.Close, "Cancel") }
+            }
+        } else if (s.id != null) SheetAction(Icons.Rounded.Link, "It moved to a new address", "Its owner gave it a domain? Type it here") { moving = true }
         when {
             busy -> Row(Modifier.padding(horizontal = 22.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(color = Brand.Orange, modifier = Modifier.size(22.dp), strokeWidth = 2.dp)

@@ -29,6 +29,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Dns
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Groups
@@ -78,6 +79,7 @@ import io.github.radianceadm.music.model.clock
 import io.github.radianceadm.music.model.matches
 import io.github.radianceadm.music.net.Connectivity
 import io.github.radianceadm.music.net.Errors
+import io.github.radianceadm.music.server.Events
 import io.github.radianceadm.music.server.Job
 import io.github.radianceadm.music.server.PartyState
 import io.github.radianceadm.music.server.Queue
@@ -100,13 +102,24 @@ internal fun tonal() = ButtonDefaults.filledTonalButtonColors(containerColor = C
 /** What a server's library shows: its songs (null: not here yet), why not, its party and its split queue. */
 data class ShelfUi(
     val songs: List<ServerSong>? = null,
+    /** How many songs it has in all (more than [songs] in a big library: some at a time). */
+    val total: Int? = null,
+    /** A big library's search, done there: the words, and what matched. */
+    val found: Pair<String, List<ServerSong>>? = null,
     val problem: String? = null,
     val offline: Boolean = false,
     /** This phone was removed there: why, in plain words. */
     val removed: String? = null,
     val party: PartyState? = null,
     val queue: Queue? = null,
-)
+) {
+    /** More songs than one page: shown some at a time, searched on the server. */
+    val big get() = (total ?: 0) > PAGE
+}
+
+/** A big library's page: this many songs at a time (and its search's most). */
+const val PAGE = 500
+private const val MOST_FOUND = 200
 
 /**
  * A server's library, as a section of Library with the server's name (the
@@ -121,39 +134,88 @@ fun ServerLibrary(pad: PaddingValues, server: Server, header: @Composable () -> 
     var ui by remember(server.base) { mutableStateOf(ShelfUi(songs = Servers.lastSongs(server))) }
     var tries by remember(server.base) { mutableIntStateOf(0) }
     var poke by remember(server.base) { mutableIntStateOf(0) }
+    var query by remember(server.base) { mutableStateOf("") }
     val online by Connectivity.online.collectAsState()
-    // its songs (again on Refresh, or when a split finished)
+    // its changes come as they happen (its events line); while that's down, it looks again now and then
+    val live by Events.up(server.base).collectAsState()
+    val removed = "This phone was removed from ${server.name}. Ask ${Servers.ownerOf(server)} for a new invite."
+    // its songs: all of them, or a big library's first page (again on Refresh, or when they changed)
     LaunchedEffect(server.base, tries) {
         if (tries > 0 || ui.songs == null) ui = ui.copy(problem = null)
-        val r = withContext(Dispatchers.IO) { runCatching { Servers.library(server) } }
+        val r = withContext(Dispatchers.IO) { runCatching { Servers.page(server, limit = PAGE).also { if (!it.more) Servers.remember(server, it.songs) } } }
         ui = r.fold(
-            { ui.copy(songs = it, problem = null, offline = false, removed = null) },
-            { e -> if (e is Refused && e.removed) ui.copy(removed = "This phone was removed from ${server.name}. Ask ${Servers.ownerOf(server)} for a new invite.") else ui.copy(problem = Errors.server(e, server.name), offline = Errors.offline(e)) },
+            { ui.copy(songs = it.songs, total = it.total, problem = null, offline = false, removed = null) },
+            { e -> if (e is Refused && e.removed) ui.copy(removed = removed) else ui.copy(problem = Errors.server(e, server.name), offline = Errors.offline(e)) },
         )
     }
-    // its party and its split queue, looked at again while this is on screen (often while songs are being split)
-    LaunchedEffect(server.base, poke) {
-        var working = emptySet<Long>()
+    // a big library's search: done there (a moment after the last key)
+    LaunchedEffect(server.base, query, ui.big, tries) {
+        val q = query.trim()
+        if (!ui.big || q.isEmpty() || ui.found?.first == q) return@LaunchedEffect
+        delay(SEARCH_DEBOUNCE_MS)
+        withContext(Dispatchers.IO) { runCatching { Servers.page(server, q = q, limit = MOST_FOUND).songs } }
+            .onSuccess { ui = ui.copy(found = q to it, problem = null) }
+            .onFailure { ui = ui.copy(problem = Errors.server(it, server.name), offline = Errors.offline(it)) }
+    }
+    // what changed there, as it happens: the songs, the split queue, what you may do (or this phone removed)
+    LaunchedEffect(server.base) {
+        Events.watch(server).collect { e ->
+            when (e) {
+                Events.Event.Library -> {
+                    ui = ui.copy(found = null)
+                    tries++
+                }
+                is Events.Event.Queued -> ui = ui.copy(queue = e.queue)
+                Events.Event.Me -> {
+                    val gone = withContext(Dispatchers.IO) { runCatching { Servers.refresh(server) }.exceptionOrNull() }
+                    if (gone is Refused && gone.removed) ui = ui.copy(removed = removed)
+                }
+                is Events.Event.Hello -> Unit
+            }
+        }
+    }
+    // the party (the events line doesn't carry it) now and then; the queue, and the songs when a split finished, only while the line is down
+    LaunchedEffect(server.base, poke, live) {
+        var working = ui.queue?.jobs?.filter { it.open }?.map { it.id }?.toSet() ?: emptySet()
+        var first = true
         while (isActive) {
             val party = withContext(Dispatchers.IO) { runCatching { server.rms.party() }.getOrNull() }
-            val queue = withContext(Dispatchers.IO) { runCatching { server.rms.queue() }.getOrNull() }
+            val queue = if (!live || first) withContext(Dispatchers.IO) { runCatching { server.rms.queue() }.getOrNull() } else null
             ui = ui.copy(party = party ?: ui.party, queue = queue ?: ui.queue)
             val open = queue?.jobs?.filter { it.open }?.map { it.id }?.toSet() ?: working
-            // a song finished splitting: its parts are in the list now
-            if ((working - open).isNotEmpty()) tries++
+            if (!live && (working - open).isNotEmpty()) tries++
             working = open
-            delay(if (open.isNotEmpty()) 4_000 else 15_000)
+            first = false
+            delay(if (live) 30_000 else if (open.isNotEmpty()) 4_000 else 15_000)
         }
     }
     // back online: it looks again
     LaunchedEffect(online) { if (online && ui.offline) tries++ }
-    ServerLibraryView(pad, server, ui, header, onRetry = { tries++; poke++ }, onChanged = { poke++ }, onParty = onParty)
+    ServerLibraryView(
+        pad, server, ui, header, onRetry = { tries++; poke++ }, onChanged = { poke++ }, onParty = onParty,
+        onSearch = { query = it },
+        onMore = {
+            val have = ui.songs.orEmpty()
+            App.instance.scope.launch {
+                val r = runCatching { Servers.page(server, offset = have.size, limit = PAGE) }
+                withContext(Dispatchers.Main) {
+                    r.onSuccess { p -> if (ui.songs == have) ui = ui.copy(songs = have + p.songs, total = p.total) }
+                        .onFailure { ui = ui.copy(problem = Errors.server(it, server.name), offline = Errors.offline(it)) }
+                }
+            }
+        },
+    )
 }
 
 /** The server's library as [ui] has it (drawn as it is: the tests' pictures too). */
 @Composable
-fun ServerLibraryView(pad: PaddingValues, server: Server, ui: ShelfUi, header: @Composable () -> Unit, onRetry: () -> Unit = {}, onChanged: () -> Unit = {}, onParty: () -> Unit = {}) {
+fun ServerLibraryView(
+    pad: PaddingValues, server: Server, ui: ShelfUi, header: @Composable () -> Unit, onRetry: () -> Unit = {}, onChanged: () -> Unit = {}, onParty: () -> Unit = {},
+    onSearch: (String) -> Unit = {}, onMore: () -> Unit = {},
+) {
     var filter by rememberSaveable(server.base) { mutableStateOf("") }
+    // a big library is searched there (the words go up)
+    LaunchedEffect(filter, ui.big) { if (ui.big) onSearch(filter) }
     var menu by remember { mutableStateOf<ServerSong?>(null) }
     var adding by remember { mutableStateOf(false) }
     var starting by remember { mutableStateOf(false) }
@@ -162,7 +224,12 @@ fun ServerLibraryView(pad: PaddingValues, server: Server, ui: ShelfUi, header: @
     val liked by App.instance.library.liked.collectAsState()
     val inParty by App.instance.party.now.collectAsState()
     val songs = ui.songs.orEmpty()
-    val shown = if (filter.isBlank()) songs else songs.filter { matches(it.track(), filter) }
+    val looking = ui.big && filter.isNotBlank() && ui.found?.first != filter.trim()
+    val shown = when {
+        filter.isBlank() -> songs
+        ui.big -> ui.found?.takeIf { it.first == filter.trim() }?.second.orEmpty()
+        else -> songs.filter { matches(it.track(), filter) }
+    }
     val tracks = shown.map { it.track() }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = pad.calculateTopPadding(), bottom = pad.calculateBottomPadding() + 12.dp)) {
         item { header() }
@@ -172,7 +239,8 @@ fun ServerLibraryView(pad: PaddingValues, server: Server, ui: ShelfUi, header: @
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(server.name, style = MaterialTheme.typography.titleLarge, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(listOfNotNull(server.host, ui.songs?.let { "${it.size} song${if (it.size == 1) "" else "s"}" }).joinToString(" · "), color = Brand.Dim, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    val count = ui.total ?: ui.songs?.size
+                    Text(listOfNotNull(server.host, count?.let { "$it song${if (it == 1) "" else "s"}" }).joinToString(" · "), color = Brand.Dim, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 IconButton(onClick = onRetry) { Icon(Icons.Rounded.Refresh, "Look again", tint = Brand.Dim) }
             }
@@ -218,8 +286,17 @@ fun ServerLibraryView(pad: PaddingValues, server: Server, ui: ShelfUi, header: @
             list.isEmpty() -> item {
                 Note(if (server.can.add) "No songs on ${server.name} yet. Add one of your liked songs: everyone there can play it then." else "No songs on ${server.name} yet. Ask ${Servers.ownerOf(server)} to add some.")
             }
+            looking -> item {
+                Row(Modifier.fillMaxWidth().padding(28.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(color = Brand.Orange, modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Text("Searching ${server.name}…", color = Brand.Dim)
+                }
+            }
             shown.isEmpty() -> item { Note("Nothing on ${server.name} matches “$filter”.") }
             else -> {
+                // a big library: some at a time (a search finds any of them)
+                if (filter.isBlank() && ui.big) item { Note("Showing ${songs.size} of ${ui.total} songs. Search to find any of them.") }
                 // the list still shows while it couldn't look again; why, above it
                 if (ui.problem != null) item { Problem(ui.problem.orEmpty(), ui.offline, onRetry = onRetry) }
                 itemsIndexed(shown, key = { _, s -> s.id }) { i, song ->
@@ -228,6 +305,11 @@ fun ServerLibraryView(pad: PaddingValues, server: Server, ui: ShelfUi, header: @
                         song, ui.queue?.of(song.id), saving = t.key in saving, saved = liked.any { it.key == t.key && it.file != null },
                         onPlay = { hub.play(tracks, i) }, onMore = { menu = song },
                     )
+                }
+                if (filter.isBlank() && songs.size < (ui.total ?: 0)) item {
+                    Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                        FilledTonalButton(onClick = onMore, colors = tonal()) { Labeled(Icons.Rounded.ExpandMore, "Show ${minOf(PAGE, (ui.total ?: 0) - songs.size)} more") }
+                    }
                 }
             }
         }
@@ -453,10 +535,17 @@ private fun AddToServerSheet(server: Server, onServer: List<ServerSong>, onAdded
     val sending by ServerSongs.sending.collectAsState()
     var filter by remember { mutableStateOf("") }
     val mine = liked.filter { it.file != null && (filter.isBlank() || matches(it, filter)) }
+    // songs the server has without their parts, split on this phone: their parts can go (looked up once, off the screen's thread)
+    var splitHere by remember { mutableStateOf(emptySet<String>()) }
+    LaunchedEffect(onServer, liked) {
+        splitHere = withContext(Dispatchers.IO) {
+            liked.filter { t -> t.file != null && ServerSongs.canSendParts(app, t, ServerSongs.copyOf(onServer, t)) }.map { it.key }.toSet()
+        }
+    }
     ModalBottomSheet(onDismissRequest = onDone, containerColor = Brand.Sheet) {
         Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
             Text("Add to ${server.name}", style = MaterialTheme.typography.headlineSmall, color = Color.White, modifier = Modifier.padding(horizontal = 22.dp))
-            Text("One of your liked songs, with its cover and lyrics. Everyone there can play it then.", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 22.dp))
+            Text("One of your liked songs, with its cover and lyrics, and its parts if it's split on this phone. Everyone there can play it then.", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 22.dp))
             TextField(
                 value = filter, onValueChange = { filter = it }, placeholder = { Text("Search your liked songs") }, singleLine = true,
                 leadingIcon = { Icon(Icons.Rounded.Search, null) },
@@ -469,10 +558,13 @@ private fun AddToServerSheet(server: Server, onServer: List<ServerSong>, onAdded
                 mine.isEmpty() -> Note("None of your liked songs match “$filter”.")
                 else -> LazyColumn(Modifier.height(440.dp)) {
                     itemsIndexed(mine, key = { _, t -> t.key }) { _, t ->
-                        val there = ServerSongs.has(onServer, t)
+                        val copy = ServerSongs.copyOf(onServer, t)
+                        val there = copy != null
+                        // there without its parts, split here: its parts go
+                        val parts = t.key in splitHere
                         val going = sending[t.key]
                         Row(
-                            Modifier.fillMaxWidth().clickable(enabled = !there && going == null) { ServerSongs.add(app, server, t, then = onAdded) }.padding(horizontal = 18.dp, vertical = 6.dp),
+                            Modifier.fillMaxWidth().clickable(enabled = (!there || parts) && going == null) { ServerSongs.add(app, server, t, onServer = copy, then = onAdded) }.padding(horizontal = 18.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Artwork(t.art, 46.dp)
@@ -481,8 +573,13 @@ private fun AddToServerSheet(server: Server, onServer: List<ServerSong>, onAdded
                                 Text(t.artist, color = Brand.Dim, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                             when {
-                                there -> Text("On the server", color = Brand.Lossless, style = MaterialTheme.typography.labelMedium)
                                 going != null -> Text("${(going * 100).toInt()} %", color = Brand.Orange, style = MaterialTheme.typography.labelMedium)
+                                parts -> Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.AutoMirrored.Rounded.CallSplit, null, tint = Brand.Orange, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Send its parts", color = Brand.Orange, style = MaterialTheme.typography.labelMedium)
+                                }
+                                there -> Text("On the server", color = Brand.Lossless, style = MaterialTheme.typography.labelMedium)
                                 else -> Icon(Icons.Rounded.CloudUpload, "Add “${t.title}”", tint = Brand.Orange)
                             }
                         }
@@ -509,46 +606,58 @@ internal fun ServerSplitPanel(t: Track, phone: @Composable () -> Unit) {
     var offline by remember(t.key) { mutableStateOf(false) }
     var poke by remember(t.key) { mutableIntStateOf(0) }
     val fetching by ServerSongs.fetching.collectAsState()
+    val live by Events.up(server.base).collectAsState()
+    // the song as the server has it (one song: GET /api/songs/ID once it's known, else a search for its file), and the queue
     LaunchedEffect(t.key, poke) {
         problem = null
-        // it was in the queue: once it isn't, the song's looked at again (its parts are there then)
-        var waited = false
-        var fresh = song == null
-        while (isActive) {
-            if (fresh) {
-                fresh = false
-                val found = withContext(Dispatchers.IO) { runCatching { Servers.library(server); Servers.song(t)?.second } }
-                found.onFailure { problem = Errors.server(it, server.name); offline = Errors.offline(it) }
-                if (found.isSuccess) {
-                    song = found.getOrNull()
-                    if (song == null) problem = "This song isn't on ${server.name} any more."
-                }
-            }
-            val s = song ?: break
-            if (s.split) {
-                // its parts, from the server, for the Mixer
-                if (ServerSongs.parts(app, t).isEmpty()) {
-                    val e = withContext(Dispatchers.IO) { runCatching { ServerSongs.fetchParts(app, t) }.exceptionOrNull() }
-                    if (e != null) {
-                        problem = "Couldn't get the parts. ${Errors.server(e, server.name)}"
-                        offline = Errors.offline(e)
-                        break
-                    }
-                }
-                app.mixer.recheck()
-                break
-            }
-            val q = withContext(Dispatchers.IO) { runCatching { server.rms.queue() } }
-            q.onSuccess { queue = it; problem = null }.onFailure { problem = Errors.server(it, server.name); offline = Errors.offline(it) }
-            val job = q.getOrNull()?.of(s.id)
-            if (job == null && waited && q.isSuccess) {
-                waited = false
-                fresh = true
-                continue
-            }
-            if (job != null) waited = true
-            delay(if (job != null) 3_000 else 15_000)
+        val found = withContext(Dispatchers.IO) { runCatching { song?.let { Servers.fresh(server, it.id) } ?: Servers.find(t)?.second } }
+        found.onFailure { problem = Errors.server(it, server.name); offline = Errors.offline(it) }
+        if (found.isSuccess) {
+            song = found.getOrNull()
+            if (song == null) problem = "This song isn't on ${server.name} any more."
         }
+        withContext(Dispatchers.IO) { runCatching { server.rms.queue() } }.onSuccess { queue = it }
+    }
+    // its split as it goes, as the server says (the queue; the song again when the library changed)
+    LaunchedEffect(t.key) {
+        Events.watch(server).collect { e ->
+            when (e) {
+                is Events.Event.Queued -> queue = e.queue
+                Events.Event.Library -> song?.let { s -> withContext(Dispatchers.IO) { runCatching { Servers.fresh(server, s.id) } }.onSuccess { song = it } }
+                else -> Unit
+            }
+        }
+    }
+    // the line down: looked at again now and then (once its job's gone, the song again)
+    LaunchedEffect(t.key, live, poke) {
+        if (live) return@LaunchedEffect
+        var waited = false
+        while (isActive) {
+            val s = song
+            delay(if (s != null && queue?.of(s.id) != null) 3_000 else 15_000)
+            if (s == null || s.split) continue
+            val q = withContext(Dispatchers.IO) { runCatching { server.rms.queue() } }.getOrNull() ?: continue
+            queue = q
+            val job = q.of(s.id)
+            if (job != null) waited = true
+            else if (waited) {
+                waited = false
+                withContext(Dispatchers.IO) { runCatching { Servers.fresh(server, s.id) } }.onSuccess { song = it }
+            }
+        }
+    }
+    // split there: its parts, from the server, for the Mixer
+    LaunchedEffect(t.key, song?.split, poke) {
+        if (song?.split != true) return@LaunchedEffect
+        if (ServerSongs.parts(app, t).isEmpty()) {
+            val e = withContext(Dispatchers.IO) { runCatching { ServerSongs.fetchParts(app, t) }.exceptionOrNull() }
+            if (e != null) {
+                problem = "Couldn't get the parts. ${Errors.server(e, server.name)}"
+                offline = Errors.offline(e)
+                return@LaunchedEffect
+            }
+        }
+        app.mixer.recheck()
     }
     val s = song
     val job = s?.let { queue?.of(it.id) }

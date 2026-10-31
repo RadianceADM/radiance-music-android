@@ -85,6 +85,8 @@ class App : Application(), SingletonImageLoader.Factory {
         NewPipe.init(NewPipeDownloader(), Localization("en", "US"))
         Connectivity.start(this) // online or not, watched from now
         Servers.load(this) // the Radiance Music Servers you joined (their keys go with what's asked of them)
+        // a server at a new address (its owner added a domain): your songs from it follow
+        Servers.onMoved = { old, new -> io.github.radianceadm.music.server.ServerSongs.rebase(this, old, new) }
         Effects.load(this)
         io.github.radianceadm.music.ui.Looks.load(this) // True Black or Stone
         library = Library(this)
