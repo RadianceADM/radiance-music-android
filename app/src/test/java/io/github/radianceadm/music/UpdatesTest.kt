@@ -18,6 +18,16 @@ class UpdatesTest {
         assertFalse(Updates.newer("0.5", "0.5.0"))
     }
 
+    @Test fun thePopUpWaitsADayAfterRemindMeLaterAndSkipsTheSkippedVersion() {
+        val now = 1_000_000_000L
+        assertTrue(Updates.asks("0.5.13", null, 0, now)) // never put off
+        assertFalse(Updates.asks("0.5.13", null, now + Updates.LATER_MS, now)) // "Remind me later" just now
+        assertFalse(Updates.asks("0.5.13", null, now + Updates.LATER_MS, now + Updates.LATER_MS - 1)) // not quite a day
+        assertTrue(Updates.asks("0.5.13", null, now + Updates.LATER_MS, now + Updates.LATER_MS)) // a day on
+        assertFalse(Updates.asks("0.5.13", "0.5.13", 0, now)) // "Skip this version"
+        assertTrue(Updates.asks("0.5.14", "0.5.13", 0, now)) // the next one asks again
+    }
+
     @Test fun theChangelogReadsAsVersionsWithTheirItems() {
         val text = File("../CHANGELOG.md").readText()
         val versions = changelog(text)

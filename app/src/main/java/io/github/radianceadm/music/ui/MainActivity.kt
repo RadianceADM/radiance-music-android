@@ -137,5 +137,7 @@ private fun Radiance() {
             mutableStateOf(!App.instance.splashed && !still)
         }
         if (splash) StartSplash(onDone = { App.instance.splashed = true; splash = false })
+        // a newer version out: the pop-up (after the splash and the first-time guide)
+        UpdatePrompt(shown = !splash && !guide)
     }
 }

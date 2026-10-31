@@ -103,5 +103,14 @@
         <receiver
             android:name=".update.Updates$Installed"
             android:exported="false" />
+
+        <!-- the new version is on after "Restart to update": a quiet notification opens it again -->
+        <receiver
+            android:name=".update.Updates$Updated"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>
