@@ -27,6 +27,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,6 +40,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import io.github.radianceadm.music.App
 import io.github.radianceadm.music.data.Import
+import io.github.radianceadm.music.split.Setup
 
 class MainActivity : ComponentActivity() {
     // your library from the computer: read once it may be (see Import)
@@ -48,6 +50,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         App.instance.player.connect()
+        Setup.start(App.instance) // the splitter's model, the first time the app opens (or going on): the start screen shows it
         setContent { RadianceTheme { Radiance() } }
         opened(intent)
         if (Import.waiting(this)) {
@@ -132,13 +135,13 @@ private fun Radiance() {
         if (guide) GuideScreen(onDone = { Guide.seen(ctx); guide = false })
         val sharing by App.instance.shareOpen.collectAsState()
         sharing?.let { ask -> ShareSongsSheet(ask.songs, ask.scan, onDismiss = { App.instance.shareOpen.value = null }) }
-        // the start's sunrise: once a cold start (not with animations turned off)
+        // the start's sunrise: once a cold start (not with animations turned off, unless the splitter's still getting ready)
         val context = LocalContext.current
-        var splash by remember {
-            val still = android.provider.Settings.Global.getFloat(context.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
-            mutableStateOf(!App.instance.splashed && !still)
-        }
-        if (splash) StartSplash(onDone = { App.instance.splashed = true; splash = false })
+        val still = remember { android.provider.Settings.Global.getFloat(context.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f }
+        // the splitter getting ready (the first time the app opens): the start screen stays, showing how far along
+        var splash by remember { mutableStateOf(!App.instance.splashed && (!still || Setup.waiting())) }
+        LaunchedEffect(Unit) { if (!splash) App.instance.splashed = true } // no splash this time: notices may show now
+        if (splash) SetupSplash(still, onDone = { App.instance.splashed = true; splash = false })
         // a newer version out: the pop-up (after the splash and the first-time guide)
         UpdatePrompt(shown = !splash && !guide)
     }

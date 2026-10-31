@@ -14,22 +14,23 @@ import kotlin.math.log10
 
 /**
  * The phone's splitter against demucs-onnx itself: the same 20 s of a song
- * (made on the build server by split-ref.py), the same model. Skipped where
- * the reference isn't.
+ * (made on the build server by split-ref.py), the same model (the copy kept in
+ * Gradle's own folder: app/build.gradle.kts). Skipped where either isn't.
  */
 class SeparateTest {
     private val dir = File("/srv/build/android/splittest")
+    private val model = File(System.getProperty("radiance.model") ?: "")
 
     private fun floats(f: File) = RandomAccessFile(f, "r").use { it.channel.map(FileChannel.MapMode.READ_ONLY, 0, f.length()).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer() }
 
     @Test fun matchesDemucsOnnx() {
-        assumeTrue(File(dir, "ref.f32").exists())
+        assumeTrue(File(dir, "ref.f32").exists() && model.length() == Model.SIZE)
         val x = floats(File(dir, "input.f32"))
         val ref = floats(File(dir, "ref.f32"))
         val total = x.limit() / 2
         val env = OrtEnvironment.getEnvironment()
         val opts = OrtSession.SessionOptions().apply { setIntraOpNumThreads(4); setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT) }
-        val session = env.createSession(File(dir, "model.onnx").absolutePath, opts)
+        val session = env.createSession(model.absolutePath, opts)
         val got = Array(4) { FloatArray(2 * total) }
         val at = IntArray(4)
         Separate.run(env, session, x, total, { p, buf, frames ->

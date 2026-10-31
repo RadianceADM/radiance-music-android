@@ -1,5 +1,3 @@
-import java.net.URI
-import java.security.MessageDigest
 import java.util.Properties
 
 plugins {
@@ -15,8 +13,8 @@ android {
         applicationId = "io.github.radianceadm.music"
         minSdk = 29 // Android 10: saving into Music/ needs no storage permission
         targetSdk = 36
-        versionCode = 21
-        versionName = "0.5.12"
+        versionCode = 22
+        versionName = "0.5.13"
         // 64-bit Arm only: every phone that can split a song (the splitter needs a few GB of memory)
         ndk { abiFilters += listOf("arm64-v8a") }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -37,7 +35,12 @@ android {
             }
         }
     }
-    testOptions { unitTests.isIncludeAndroidResources = true }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+        // the splitter's model isn't in the app (it downloads on the phone's first open, split/Model.kt);
+        // the tests that run it use a copy kept in Gradle's own folder, where there is one (skipped where not)
+        unitTests.all { it.systemProperty("radiance.model", File(gradle.gradleUserHomeDir, "radiance/htdemucs_fp16weights.onnx").path) }
+    }
     buildTypes {
         // a test build: beside the real app (its own name), so a phone's device tests never touch it
         debug {
@@ -59,8 +62,6 @@ android {
     buildFeatures {
         compose = true
     }
-    // the splitter's model is stored as it is (the app maps it straight from the APK)
-    androidResources { noCompress += "onnx" }
     packaging {
         resources {
             excludes += setOf("META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*", "META-INF/AL2.0", "META-INF/LGPL2.1", "META-INF/*.kotlin_module")
@@ -106,44 +107,6 @@ configurations.configureEach {
     if (name.endsWith("UnitTestRuntimeClasspath")) exclude(group = "com.microsoft.onnxruntime", module = "onnxruntime-android")
 }
 
-// The splitter's model goes inside the app, so a phone never downloads it: fetched once by the
-// build into Gradle's own folder, checked to be exactly the published file, then put among the
-// app's assets.
-abstract class SplitterModel : DefaultTask() {
-    @get:OutputDirectory abstract val into: DirectoryProperty
-    @get:Internal abstract val cache: RegularFileProperty
-
-    @TaskAction fun put() {
-        val cached = cache.get().asFile
-        if (cached.length() != SIZE) {
-            cached.parentFile.mkdirs()
-            val part = File(cached.path + ".part")
-            logger.lifecycle("Fetching the splitter's model (${SIZE / 1_000_000} MB, once)")
-            URI(URL).toURL().openStream().use { s -> part.outputStream().use { s.copyTo(it, 1 shl 20) } }
-            val digest = MessageDigest.getInstance("SHA-256")
-            part.inputStream().use { s ->
-                val b = ByteArray(1 shl 20)
-                while (true) { val n = s.read(b); if (n < 0) break; digest.update(b, 0, n) }
-            }
-            val sum = digest.digest().joinToString("") { "%02x".format(it) }
-            check(part.length() == SIZE && sum == SHA256) { "the splitter's model didn't come whole (${part.length()} bytes, $sum)" }
-            part.renameTo(cached)
-        }
-        val out = into.get().asFile.resolve(ASSET)
-        out.parentFile.mkdirs()
-        if (out.length() != SIZE) cached.copyTo(out, overwrite = true)
-    }
-
-    companion object {
-        /** Demucs (MIT) exported to ONNX by StemSplitio (MIT), weights stored as fp16. */
-        const val URL = "https://huggingface.co/StemSplitio/htdemucs-onnx/resolve/main/htdemucs_fp16weights.onnx"
-        const val SIZE = 165_612_636L
-        const val SHA256 = "d05c269d0178d2a72ad484b10b11dd370193fc923201c3b27a99f848745db70a"
-        /** Where the app finds it (Splitter.MODEL_ASSET). */
-        const val ASSET = "splitter/htdemucs_fp16weights.onnx"
-    }
-}
-
 // What's new, on the About page: the changelog goes in with the app.
 abstract class ChangelogAsset : DefaultTask() {
     @get:InputFile abstract val from: RegularFileProperty
@@ -160,10 +123,5 @@ androidComponents {
             from.set(rootProject.file("CHANGELOG.md"))
         }
         variant.sources.assets?.addGeneratedSourceDirectory(changelog, ChangelogAsset::into)
-        if (variant.buildType == "debug") return@onVariants // a test build: small, without the splitter's model
-        val model = tasks.register<SplitterModel>("${variant.name}SplitterModel") {
-            cache.set(File(gradle.gradleUserHomeDir, "radiance/htdemucs_fp16weights.onnx"))
-        }
-        variant.sources.assets?.addGeneratedSourceDirectory(model, SplitterModel::into)
     }
 }

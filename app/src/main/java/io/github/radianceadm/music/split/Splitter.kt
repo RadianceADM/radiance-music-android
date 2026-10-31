@@ -22,25 +22,18 @@ import java.nio.channels.FileChannel
 object Splitter {
     private const val TAG = "radiance-split"
 
-    /**
-     * The model: Demucs (MIT) exported to ONNX by StemSplitio (MIT), weights
-     * stored as fp16. It comes inside the app (put there by the build, checked:
-     * app/build.gradle.kts), stored as it is, so it's read straight from the
-     * APK: nothing to download, nothing copied.
-     */
-    const val MODEL_ASSET = "splitter/htdemucs_fp16weights.onnx"
-
     const val RATE = 44100
     val PARTS = Separate.PARTS
 
-    /** The model, mapped from inside the APK (the mapping outlives the file it came from). */
-    private fun model(context: Context): ByteBuffer = context.assets.openFd(MODEL_ASSET).use { fd ->
-        FileInputStream(fd.fileDescriptor).channel.use { it.map(FileChannel.MapMode.READ_ONLY, fd.startOffset, fd.declaredLength) }
-    }
-
-    /** The copy earlier versions downloaded (the model comes with the app now): gone, its space back. */
-    fun forgetDownloaded(context: Context) {
-        File(context.filesDir, "splitter").takeIf { it.isDirectory }?.listFiles { f -> f.name.startsWith("htdemucs_fp16weights.onnx") }?.forEach { it.delete() }
+    /**
+     * The model (Model.kt: downloaded the first time the app opens, checked),
+     * mapped read-only from its file: nothing copied into memory, and the
+     * mapping outlives the file's opening.
+     */
+    private fun model(context: Context): ByteBuffer {
+        val f = Model.file(context)
+        if (Model.due(f)) fail("The splitter isn't ready yet. It gets ready when you're back online.")
+        return FileInputStream(f).channel.use { it.map(FileChannel.MapMode.READ_ONLY, 0, it.size()) }
     }
 
     /** Where the phone's own splits go: `<song>.<part>.m4a`. */

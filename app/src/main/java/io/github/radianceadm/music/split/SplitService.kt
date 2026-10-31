@@ -80,9 +80,10 @@ class Splits(private val app: App) {
         save(_queue.value.filterNot { it.key == key })
     }
 
-    /** Goes on with the queue (when the app opens, or a song is added). */
+    /** Goes on with the queue (when the app opens, a song is added, or the splitter's just got ready). */
     fun start() {
         if (_queue.value.isEmpty()) return
+        if (Model.due(app)) return // the splitter isn't here yet: the queue waits for it (Setup starts it then)
         runCatching { ContextCompat.startForegroundService(app, Intent(app, SplitService::class.java)) }
             .onFailure { Log.w("radiance-split", "couldn't start the splitter: ${it.message}") }
     }

@@ -2,17 +2,46 @@ package io.github.radianceadm.music.ui
 
 import android.graphics.Paint
 import android.graphics.Typeface
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -33,6 +62,12 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import io.github.radianceadm.music.App
+import io.github.radianceadm.music.split.Model
+import io.github.radianceadm.music.split.Setup
+import kotlinx.coroutines.flow.first
 import kotlin.math.PI
 import kotlin.math.hypot
 import kotlin.math.min
@@ -179,30 +214,138 @@ object Splash {
     }
 }
 
-/** The splash over everything until it's done ([onDone]: take it away). */
+/** The start's splash, staying on the icon while the splitter gets ready (Setup): until it's ready, or Open Radiance Music now. */
 @Composable
-fun StartSplash(onDone: () -> Unit) {
-    var t by remember { mutableFloatStateOf(0f) }
+fun SetupSplash(still: Boolean, onDone: () -> Unit) {
+    val setup by Setup.state.collectAsState()
+    val later by Setup.later.collectAsState()
+    StartSplash(
+        setup = setup.takeUnless { it == Setup.State.Ready || later },
+        onRetry = { Setup.retry(App.instance) },
+        onOpenNow = { Setup.openNow() },
+        still = still,
+        onDone = onDone,
+    )
+}
+
+/**
+ * The splash over everything until it's done ([onDone]: take it away).
+ * [setup]: the splitter still getting ready (the first time the app opens):
+ * the splash stays on the icon, its bars playing, with how far along it is
+ * (owner, 2026-10-31: "if the pre-reqs are not yet there stay in the loading
+ * screen with progress"); a tap doesn't skip it. Once it's ready (or Open
+ * Radiance Music now), on as usual. [still]: animations turned off (the icon
+ * standing still, gone at once).
+ */
+@Composable
+fun StartSplash(
+    setup: Setup.State? = null,
+    onRetry: () -> Unit = {},
+    onOpenNow: () -> Unit = {},
+    still: Boolean = false,
+    onDone: () -> Unit,
+) {
+    val held by rememberUpdatedState(setup != null)
+    var t by remember { mutableFloatStateOf(if (still) Splash.SHOWN_S else 0f) }
+    // held: the bars go on playing (settling only once it's let go)
+    var settleFrom by remember { mutableFloatStateOf(Splash.SHOWN_S) }
     // a tap: the dark opens now
     var openFrom by remember { mutableFloatStateOf(Splash.openFrom(Splash.SHOWN_S)) }
     var tapped by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
+        if (still) {
+            snapshotFlow { held }.first { !it }
+            onDone()
+            return@LaunchedEffect
+        }
         val start = withFrameNanos { it }
         while (t < Splash.end(openFrom)) {
             withFrameNanos { now -> t = (now - start) / 1e9f }
+            if (held) {
+                settleFrom = maxOf(Splash.SHOWN_S, t)
+                openFrom = Splash.openFrom(settleFrom)
+            }
         }
         onDone()
     }
-    Canvas(
-        Modifier.fillMaxSize().pointerInput(Unit) {
-            detectTapGestures {
-                if (!tapped) {
-                    tapped = true
-                    openFrom = minOf(openFrom, t)
+    Box(Modifier.fillMaxSize()) {
+        Canvas(
+            Modifier.fillMaxSize().pointerInput(Unit) {
+                detectTapGestures {
+                    if (!tapped && !held) {
+                        tapped = true
+                        openFrom = minOf(openFrom, t)
+                    }
+                }
+            },
+        ) {
+            with(Splash) { splash(t, settleFrom, openFrom) }
+        }
+        // how far along, under the icon (the last of it fading as the splash goes on)
+        var last by remember { mutableStateOf(setup) }
+        if (setup != null) last = setup
+        AnimatedVisibility(setup != null, Modifier.align(Alignment.BottomCenter), enter = fadeIn(), exit = fadeOut()) {
+            last?.let { SetupPanel(it, onRetry, onOpenNow) }
+        }
+    }
+}
+
+/**
+ * The splitter getting ready, on the start screen: plain words and a thin bar
+ * (how many MB of how many); stopped, why (in plain words) with Try again and
+ * Open Radiance Music now.
+ */
+@Composable
+fun SetupPanel(state: Setup.State, onRetry: () -> Unit, onOpenNow: () -> Unit) {
+    val mb = Model.SIZE / 1_000_000
+    Column(
+        Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 32.dp, end = 32.dp, bottom = 56.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        when (state) {
+            is Setup.State.Getting, Setup.State.Checking, Setup.State.Ready -> {
+                val checking = state !is Setup.State.Getting
+                Text(
+                    if (checking) "Getting Radiance Music ready: checking the splitter…" else "Getting Radiance Music ready: downloading the splitter ($mb MB)…",
+                    color = Color.White, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center,
+                )
+                Gap(14.dp)
+                val track = Color.White.copy(alpha = 0.15f)
+                if (state is Setup.State.Getting) {
+                    LinearProgressIndicator(progress = { (state.done.toFloat() / state.total).coerceIn(0f, 1f) }, color = Brand.Orange, trackColor = track, modifier = Modifier.fillMaxWidth().height(3.dp))
+                    Gap(8.dp)
+                    Text("${state.done / 1_000_000} MB of ${state.total / 1_000_000} MB", color = Brand.Dim, style = MaterialTheme.typography.labelSmall)
+                } else {
+                    LinearProgressIndicator(color = Brand.Orange, trackColor = track, modifier = Modifier.fillMaxWidth().height(3.dp))
+                    Gap(8.dp)
+                    Text("$mb MB of $mb MB", color = Brand.Dim, style = MaterialTheme.typography.labelSmall)
                 }
             }
-        },
-    ) {
-        with(Splash) { splash(t, Splash.SHOWN_S, openFrom) }
+            is Setup.State.Stopped -> {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(if (state.offline) Icons.Rounded.CloudOff else Icons.Rounded.ErrorOutline, null, tint = Brand.Orange, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("The splitter couldn't download", color = Color.White, style = MaterialTheme.typography.titleMedium)
+                }
+                Gap(4.dp)
+                Text(state.why, color = Color.White, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+                Gap(6.dp)
+                Text(
+                    if (state.offline) "Your songs still play. Splitting gets ready by itself once you're back online."
+                    else "Your songs still play. Splitting gets ready once it's downloaded: try again here or in the Mixer.",
+                    color = Brand.Dim, style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center,
+                )
+                Gap(16.dp)
+                Button(onClick = onRetry, colors = ButtonDefaults.buttonColors(containerColor = Brand.Orange), modifier = Modifier.fillMaxWidth()) {
+                    Labeled(Icons.Rounded.Refresh, "Try again")
+                }
+                Gap(8.dp)
+                FilledTonalButton(
+                    onClick = onOpenNow,
+                    colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color.White.copy(alpha = 0.12f), contentColor = Color.White),
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Labeled(Icons.AutoMirrored.Rounded.ArrowForward, "Open Radiance Music now") }
+            }
+        }
     }
 }

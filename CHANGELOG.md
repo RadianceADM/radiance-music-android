@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.5.13
+
+- **A small download (about 43 MB, it was 208 MB):** the splitter's model isn't inside the app
+  any more. The first time Radiance Music opens, it gets it by itself (165 MB, once) while the
+  start screen shows how far along it is; nothing to press. If the internet drops it picks up
+  where it stopped, and it's checked before it's used. Offline, it says so, with Try again or
+  Open Radiance Music now (it finishes by itself when you're back online). Phones updating from
+  an earlier version get it the same way, once, the first time they open this one.
+- **It says what's wrong, in plain words:** no more raw error text. Notices at the top come
+  with what to do (Retry, Connect, Open).
+- **A song that won't play says why** (you're offline, YouTube wants to check you're not a
+  robot, the song isn't on YouTube anymore, …) and goes on to the next one; after three in a
+  row it stops and says so, with Retry. A spinner turns around Play while a song loads.
+- **Offline shows:** "Offline · saved songs still play" above the player, "Back online" when
+  the internet returns. Search, lyrics and the lyric picker say you're offline (with Connect)
+  instead of "nothing found", and look again when you're back; liked songs that couldn't be
+  saved offline are saved then.
+- **The update pop-up:** when a new Radiance Music is out, Update now (it downloads, then
+  Restart to update), Remind me later (a day) or Skip this version. Phones on 0.5.12 update
+  to this one from About as before; the pop-up first shows for the version after it.
+
 ## 0.5.12
 
 - **How to use it, the first time the app opens:** five cards to swipe through (search, like

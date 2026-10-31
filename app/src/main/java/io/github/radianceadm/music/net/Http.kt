@@ -10,6 +10,8 @@ import org.json.JSONObject
 import org.schabi.newpipe.extractor.downloader.Downloader
 import org.schabi.newpipe.extractor.downloader.Response
 import org.schabi.newpipe.extractor.exceptions.ReCaptchaException
+import java.io.File
+import java.io.FileOutputStream
 import java.io.OutputStream
 import java.util.concurrent.TimeUnit
 
@@ -68,6 +70,44 @@ object Http {
             if (got < piece || (size != null && size > 0 && at >= size)) break
         }
         progress(1f)
+    }
+
+    /**
+     * Downloads [url] into [part], going on from what's in it already (a
+     * dropped connection, the app closed): only the rest is asked for (HTTP
+     * Range). A server that sends the whole file again starts it over.
+     * [progress] gets the bytes in [part] so far; the end is the bytes there.
+     * Bytes are on disk as they come, so a stop anywhere loses nothing.
+     */
+    fun resume(url: String, part: File, client: OkHttpClient = this.client, progress: (Long) -> Unit = {}): Long {
+        val from = part.length()
+        val req = Request.Builder().url(url).header("User-Agent", USER_AGENT).apply { if (from > 0) header("Range", "bytes=$from-") }.build()
+        client.newCall(req).execute().use { r ->
+            if (r.code == 416 && from > 0) return from // past the end: it's all here
+            if (r.code != 206 && r.code != 200) fail("The download stopped. Try again.", "HTTP ${r.code}")
+            // the rest from where it stopped (as asked), or the whole file again
+            val append = r.code == 206 && r.header("Content-Range")?.startsWith("bytes $from-") != false
+            if (r.code == 206 && !append) fail("The download stopped. Try again.", "asked from $from, got ${r.header("Content-Range")}")
+            var have = if (append) from else 0L
+            FileOutputStream(part, append).use { out ->
+                val src = r.body.byteStream()
+                val buf = ByteArray(256 * 1024)
+                var shown = have
+                progress(have)
+                while (true) {
+                    val n = src.read(buf)
+                    if (n < 0) break
+                    out.write(buf, 0, n)
+                    have += n
+                    if (have - shown >= 1_000_000) {
+                        shown = have
+                        progress(have)
+                    }
+                }
+            }
+            progress(have)
+            return have
+        }
     }
 }
 

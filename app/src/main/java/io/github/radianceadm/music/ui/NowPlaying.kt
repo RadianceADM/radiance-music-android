@@ -1,6 +1,8 @@
 package io.github.radianceadm.music.ui
 
 import androidx.compose.material.icons.rounded.AutoFixOff
+import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.automirrored.rounded.CallSplit
 import androidx.compose.material.icons.rounded.StopCircle
 import androidx.compose.material.icons.rounded.RestartAlt
@@ -141,6 +143,8 @@ import io.github.radianceadm.music.net.Connectivity
 import io.github.radianceadm.music.play.Effects
 import io.github.radianceadm.music.source.Line
 import io.github.radianceadm.music.source.Lyrics
+import io.github.radianceadm.music.split.Model
+import io.github.radianceadm.music.split.Setup
 import io.github.radianceadm.music.split.SplitService
 import io.github.radianceadm.music.split.Splits
 import kotlin.math.roundToInt
@@ -518,7 +522,11 @@ private fun PartSliders(gains: Map<String, Float>) {
     }
 }
 
-/** Not split yet: split it here (one at a time, in the background), and how many cores that may use. */
+/**
+ * Not split yet: split it here (one at a time, in the background), and how
+ * many cores that may use. The splitter not here yet (its setup: offline, or
+ * still downloading) says so instead of failing.
+ */
 @Composable
 private fun SplitPanel(t: Track) {
     val app = App.instance
@@ -526,6 +534,7 @@ private fun SplitPanel(t: Track) {
     val queue by splits.queue.collectAsState()
     val now by splits.now.collectAsState()
     val problem by splits.problem.collectAsState()
+    val setup by Setup.state.collectAsState()
     var cores by remember { mutableIntStateOf(splits.cores) }
     val context = LocalContext.current
     val askNotes = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { splits.add(t) }
@@ -545,10 +554,12 @@ private fun SplitPanel(t: Track) {
             }
             place >= 0 -> {
                 Text("Waiting to be split", color = Color.White, style = MaterialTheme.typography.titleMedium)
-                Text(when (place) { 0 -> "Starting in a moment."; 1 -> "Next, after the song being split now."; else -> "$place songs before it." }, color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
+                val starts = when (place) { 0 -> "Starting in a moment."; 1 -> "Next, after the song being split now."; else -> "$place songs before it." }
+                Text(if (setup == Setup.State.Ready) starts else "Starting once the splitter is ready.", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
                 Gap(8.dp)
                 FilledTonalButton(onClick = { splits.remove(t.key) }) { Labeled(Icons.Rounded.Close, "Don't split it") }
             }
+            setup != Setup.State.Ready -> SplitterNotReady(setup)
             else -> {
                 Text("Split this song into drums, bass, other and vocals, here on this phone, to mix them.", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
                 if (t.file == null) Text("It's liked and saved first.", color = Brand.Dim, style = MaterialTheme.typography.labelSmall)
@@ -576,6 +587,43 @@ private fun SplitPanel(t: Track) {
             Text("$cores of ${Splits.MAX_CORES}", color = Brand.Dim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(56.dp).padding(start = 8.dp))
         }
         Text("More cores split sooner; fewer keep the phone cooler. The next split uses this.", color = Brand.Dim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = 72.dp))
+    }
+}
+
+/**
+ * The splitter's model isn't here yet (Setup): how far along its download is,
+ * or why it stopped. Offline: "Splitting gets ready when you're back online"
+ * (it goes on by itself then); stopped for another reason: Try again.
+ */
+@Composable
+internal fun SplitterNotReady(state: Setup.State) {
+    val mb = Model.SIZE / 1_000_000
+    when (state) {
+        is Setup.State.Getting -> {
+            Text("Getting the splitter ready", color = Color.White, style = MaterialTheme.typography.titleMedium)
+            Text("Downloading it once: ${state.done / 1_000_000} MB of ${state.total / 1_000_000} MB. Splitting works when it's done.", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
+            Gap(8.dp)
+            LinearProgressIndicator(progress = { (state.done.toFloat() / state.total).coerceIn(0f, 1f) }, color = Brand.Orange, trackColor = Color.White.copy(alpha = 0.15f), modifier = Modifier.fillMaxWidth())
+        }
+        Setup.State.Checking, Setup.State.Ready -> {
+            Text("Getting the splitter ready", color = Color.White, style = MaterialTheme.typography.titleMedium)
+            Text("Checking it ($mb MB). Splitting works in a moment.", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
+            Gap(8.dp)
+            LinearProgressIndicator(color = Brand.Orange, trackColor = Color.White.copy(alpha = 0.15f), modifier = Modifier.fillMaxWidth())
+        }
+        is Setup.State.Stopped -> if (state.offline) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.CloudOff, null, tint = Brand.Dim, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(10.dp))
+                Text("Splitting gets ready when you're back online", color = Color.White, style = MaterialTheme.typography.titleMedium)
+            }
+            Text("The splitter ($mb MB) downloads once, by itself, as soon as the phone's online.", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
+        } else {
+            Text("The splitter isn't ready yet", color = Color.White, style = MaterialTheme.typography.titleMedium)
+            Text("It couldn't download. ${state.why}", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
+            Gap(8.dp)
+            FilledTonalButton(onClick = { Setup.retry(App.instance) }) { Labeled(Icons.Rounded.Refresh, "Try again") }
+        }
     }
 }
 

@@ -91,15 +91,17 @@ suspend fun SnackbarHostState.tell(n: Notice) {
     if (showSnackbar(Shown(n)) == SnackbarResult.ActionPerformed) n.action?.run?.invoke()
 }
 
-/** The app's notices (App.tell), at the top of the screen, once the start's sunrise is over and while the app is on screen. */
+/**
+ * The app's notices (App.tell), at the top of the screen, once the start's
+ * sunrise (or the splitter's setup) is over and while the app is on screen.
+ * (No splash this time, animations off: MainActivity says splashed at once.)
+ */
 @Composable
 fun Notices() {
     val host = remember { SnackbarHostState() }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    val context = LocalContext.current
     LaunchedEffect(Unit) {
-        val still = android.provider.Settings.Global.getFloat(context.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
-        snapshotFlow { App.instance.splashed || still }.first { it }
+        snapshotFlow { App.instance.splashed }.first { it }
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             App.instance.notices.collect { host.tell(it) }
         }

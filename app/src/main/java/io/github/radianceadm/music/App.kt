@@ -15,8 +15,8 @@ import io.github.radianceadm.music.play.Effects
 import io.github.radianceadm.music.play.Mixer
 import io.github.radianceadm.music.play.PlayerHub
 import io.github.radianceadm.music.share.Session
+import io.github.radianceadm.music.split.Setup
 import io.github.radianceadm.music.split.Splits
-import io.github.radianceadm.music.split.Splitter
 import io.github.radianceadm.music.ui.Notice
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -90,7 +90,7 @@ class App : Application() {
                 saveMissing()
             }
         }
-        scope.launch { Splitter.forgetDownloaded(this@App) } // the model comes with the app now
+        Setup.check(this) // the splitter's model here or not (it downloads once the app opens: MainActivity)
         io.github.radianceadm.music.update.Updates.atStart(this) // a newer version out? (over the air)
     }
 

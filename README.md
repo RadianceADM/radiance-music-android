@@ -22,8 +22,8 @@ the Play Store goes on).
   has, or FLAC). Its official music video goes to `Movies/Radiance Music` (720p). Its cover and
   timed lyrics are kept too, so it plays offline.
 - **Split it, on the phone:** any saved song splits into drums, bass, other and vocals with the
-  same Demucs model the computer app uses (as ONNX, inside the app: nothing to download first,
-  and the song isn't sent anywhere). It pauses when the battery is low or the phone runs hot.
+  same Demucs model the computer app uses (as ONNX, downloaded once, by itself, the first time
+  the app opens; the song isn't sent anywhere). It pauses when the battery is low or the phone runs hot.
 - **The Mixer:** a slider for each part (No vocals and Vocals only in one tap), plus low cut,
   high cut and reverb for the whole sound.
 - **Share it to your story:** a song's cover, or the lyric lines you pick, as a story made for
@@ -46,7 +46,7 @@ the Play Store goes on).
 | | |
 |---|---|
 | Phone | Android 10 or newer, 64-bit (arm64) |
-| Space | about 210 MB for the app (the splitter's model is inside it), plus your songs |
+| Space | about 43 MB for the app, plus 165 MB for the splitter's model (downloaded on first open) and your songs |
 | Network | for searching, streaming and saving; songs you saved play offline |
 
 Splitting a 4-minute song takes about 3½ minutes on a Galaxy S24 Ultra; slower phones take
@@ -60,13 +60,15 @@ export ANDROID_HOME=/path/to/android-sdk   # platform 37, build-tools 36.1.0
 gradle assembleRelease                     # Gradle 9.8+, JDK 17 or newer
 ```
 
-The build fetches the splitter's model once (Demucs as ONNX, 166 MB, checked against its
-SHA-256) and puts it inside the app. The release is signed with the key named in
+The splitter's model (Demucs as ONNX, 165 MB) isn't inside the app: the phone downloads it the
+first time the app opens, going on after a dropped connection, and keeps it only if its SHA-256
+matches (`split/Model.kt`). The unit tests that run the model use a copy in
+`$GRADLE_USER_HOME/radiance/htdemucs_fp16weights.onnx` and are skipped without one. The release is signed with the key named in
 `signing.properties` (outside this repository; the path comes from `RADIANCE_SIGNING`).
 Without it, the build is signed with the debug key.
 
 `gradle assembleDebug` makes a test build: its own app beside the real one
-(`io.github.radianceadm.music.debug`), without the splitter's model. `connectedDebugAndroidTest`
+(`io.github.radianceadm.music.debug`). `connectedDebugAndroidTest`
 runs the device tests on a connected phone (a story video made with a song's sound).
 
 ## YouTube
