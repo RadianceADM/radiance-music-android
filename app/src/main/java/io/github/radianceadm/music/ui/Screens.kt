@@ -5,6 +5,17 @@ import androidx.compose.foundation.background
 import kotlinx.coroutines.launch
 import io.github.radianceadm.music.data.Library
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.LinearEasing
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -116,9 +127,13 @@ fun HomeScreen(pad: PaddingValues, onSearch: () -> Unit, onSettings: () -> Unit)
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = pad.calculateTopPadding(), bottom = pad.calculateBottomPadding() + 16.dp)) {
         item { PageTitle("Home", onSettings) }
         item {
+            // the banner's sunset moves (owner, 2026-11-01: "gumagalaw yung back draft non like with
+            // gradients"): soft lights drifting slowly; read only while drawing, so it's light
+            val drift = rememberInfiniteTransition(label = "hero")
+            val t by drift.animateFloat(0f, 1f, infiniteRepeatable(tween(18_000, easing = LinearEasing)), label = "hero-drift")
             Column(
                 Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(26.dp))
-                    .background(Brush.linearGradient(listOf(Brand.Card, Color(0xFF5C2A12), Brand.Orange.copy(alpha = 0.8f))))
+                    .drawBehind { heroSunset(t) }
                     .padding(24.dp),
             ) {
                 Text(greeting(), style = MaterialTheme.typography.displaySmall, color = Color.White)
@@ -389,6 +404,22 @@ fun LibraryScreen(pad: PaddingValues, onSettings: () -> Unit, onParty: () -> Uni
         }
     }
     }
+}
+
+/**
+ * Home's banner background: a warm dark base with three soft lights (orange, amber, deep brown)
+ * drifting on slow loops; `t` goes 0 to 1 every 18 s and every loop closes on itself.
+ */
+private fun DrawScope.heroSunset(t: Float) {
+    val w = size.width
+    val h = size.height
+    val a = t * 2f * PI.toFloat()
+    drawRect(Brush.linearGradient(listOf(Brand.Card, Color(0xFF3A1A0B)), start = Offset.Zero, end = Offset(w, h)))
+    fun light(x: Float, y: Float, r: Float, c: Color) =
+        drawCircle(Brush.radialGradient(listOf(c, c.copy(alpha = 0f)), center = Offset(x, y), radius = r), radius = r, center = Offset(x, y))
+    light(w * (0.78f + 0.16f * cos(a)), h * (0.40f + 0.28f * sin(a)), w * 0.8f, Brand.Orange.copy(alpha = 0.78f))
+    light(w * (0.22f + 0.18f * sin(a + 1.3f)), h * (0.95f + 0.18f * cos(a + 0.7f)), w * 0.65f, Color(0xFF6A2E12).copy(alpha = 0.9f))
+    light(w * (0.50f + 0.28f * cos(2 * a + 2f)), h * (0.05f + 0.22f * sin(2 * a)), w * 0.5f, Color(0xFFFFAE63).copy(alpha = 0.38f))
 }
 
 /** Library's own lists (any other pill is a server: its address). */
