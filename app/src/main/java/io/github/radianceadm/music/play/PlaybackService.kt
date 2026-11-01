@@ -25,6 +25,7 @@ import androidx.media3.session.MediaSessionService
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import io.github.radianceadm.music.App
+import io.github.radianceadm.music.feedback.Feedback
 import io.github.radianceadm.music.net.Errors
 import io.github.radianceadm.music.net.Http
 import io.github.radianceadm.music.server.Servers
@@ -70,6 +71,8 @@ class PlaybackService : MediaSessionService() {
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 mediaItem?.let { trackOf(it) }?.let { App.instance.library.played(it) }
+                // a song played to its end: a free moment (the feedback pop-up may ask then)
+                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) Feedback.songEnded()
             }
 
             // a song that won't play: why, in plain words, and on to the next one (not past three in a row)
@@ -88,6 +91,7 @@ class PlaybackService : MediaSessionService() {
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (isPlaying) App.instance.player.streak.played()
+                if (isPlaying) Feedback.played(this@PlaybackService, player.currentMediaItem?.mediaId) // songs played, for when to ask for feedback
             }
         })
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)

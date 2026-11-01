@@ -2,16 +2,31 @@ package io.github.radianceadm.music.ui
 
 import android.graphics.Bitmap
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.unit.dp
 import io.github.radianceadm.music.App
+import io.github.radianceadm.music.feedback.Account
+import io.github.radianceadm.music.feedback.Answers
+import io.github.radianceadm.music.feedback.Area
+import io.github.radianceadm.music.feedback.Feedback
+import io.github.radianceadm.music.feedback.Kind
+import io.github.radianceadm.music.feedback.Step
 import io.github.radianceadm.music.model.Source
 import io.github.radianceadm.music.model.Track
 import org.junit.Rule
@@ -74,5 +89,31 @@ class ScreensTest {
     @Test fun updateInstalling() = card("update-4-installing", io.github.radianceadm.music.update.Updates.State.Installing(release))
     @Test fun updateAllow() = card("update-5-allow", io.github.radianceadm.music.update.Updates.State.Allow(release))
     @Test fun updateFailed() = card("update-6-failed", io.github.radianceadm.music.update.Updates.State.Failed("Couldn't update: the download stopped", release))
+    // the feedback pop-up (#14), as its bottom sheet shows it over the app
+    private val filled = Area.entries.zip(listOf(5, 4, 5, 3, 4))
+        .fold(Answers(enjoying = true, comment = "Love splitting songs on the phone. More lyrics for OPM songs, please!")) { a, (area, n) -> a.rate(area, n) }
+    private val ana = Account.Me("Ana Reyes", "ana@example.com")
+    private fun feedback(name: String, answers: Answers, step: Step, me: Account.Me? = null, online: Boolean = true) = shot(name) {
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)), contentAlignment = Alignment.BottomCenter) {
+            Surface(color = Brand.Sheet, contentColor = Color.White, shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp), modifier = Modifier.fillMaxWidth()) {
+                Column {
+                    // the sheet's handle
+                    Box(Modifier.fillMaxWidth().padding(vertical = 22.dp), contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(32.dp, 4.dp).background(Brand.Dim.copy(alpha = 0.5f), RoundedCornerShape(50)))
+                    }
+                    FeedbackForm(answers, step, me, online, {}, {}, {}, {}, {}, {}, {})
+                }
+            }
+        }
+    }
+    @Test fun feedbackEmpty() = feedback("feedback-1-empty", Answers(), Step.Form)
+    @Test fun feedbackFilled() = feedback("feedback-2-filled", filled, Step.Form, me = ana)
+    @Test fun feedbackSending() = feedback("feedback-3-sending", filled, Step.Sending, me = ana)
+    @Test fun feedbackMissing() = feedback("feedback-4-missing", Answers().rate(Area.OVERALL, 4).rate(Area.SOUND, 5),
+        Step.Problem(Kind.MISSING, Feedback.MISSING))
+    @Test fun feedbackOffline() = feedback("feedback-5-offline", filled, Step.Problem(Kind.OFFLINE, Feedback.OFFLINE), me = ana, online = false)
+    @Test fun feedbackLater() = feedback("feedback-6-later", filled, Step.Problem(Kind.LATER, "Too many tries just now. Try again in 2 minutes."), me = ana)
+    @Test fun feedbackThanks() = feedback("feedback-7-thanks", Answers(), Step.Thanks(share = true))
+    @Test fun feedbackThanksNoShare() = feedback("feedback-8-thanks-plain", Answers(), Step.Thanks(share = false))
     @Test fun share() = shot("share") { ShareScreen(Track(Source.YOUTUBE, "test", "Golden Hour", "JVKE", seconds = 209), emptyList(), onClose = {}) }
 }

@@ -92,6 +92,13 @@ dependencies {
     implementation("androidx.camera:camera-camera2:1.6.2") // the camera, reading a share's QR
     implementation("androidx.camera:camera-lifecycle:1.6.2")
     implementation("androidx.camera:camera-view:1.6.2")
+    // feedback (#14): "Sign in with Google" to send it (Credential Manager), the app's token kept encrypted
+    implementation("androidx.credentials:credentials:1.6.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.6.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.2.1")
+    implementation("androidx.security:security-crypto:1.1.0")
+    // Google's sign-in brings an old Fragment along; this newer one keeps permission requests right (lint: InvalidFragmentVersionForActivityResult)
+    implementation("androidx.fragment:fragment:1.9.1")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.17") // the story card drawn on the computer, to look at
     testImplementation("androidx.compose.ui:ui-test-junit4") // the screens drawn on the computer, to look at

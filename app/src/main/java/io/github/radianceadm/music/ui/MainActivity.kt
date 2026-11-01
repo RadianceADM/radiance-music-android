@@ -162,5 +162,7 @@ private fun Radiance() {
         if (splash) SetupSplash(still, onDone = { App.instance.splashed = true; splash = false })
         // a newer version out: the pop-up (after the splash and the first-time guide)
         UpdatePrompt(shown = !splash && !guide)
+        // now and then, at a free moment: are you enjoying it? (never over the splash or the guide)
+        FeedbackPrompt(shown = !splash && !guide)
     }
 }

@@ -16,3 +16,6 @@
 -keep class io.github.radianceadm.music.model.** { *; }
 # ONNX Runtime (the splitter) is reached from its native library by name
 -keep class ai.onnxruntime.** { *; }
+# Credential Manager finds Google's sign-in (Play services) by name
+-if class androidx.credentials.CredentialManager
+-keep class androidx.credentials.playservices.** { *; }

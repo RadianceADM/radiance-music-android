@@ -53,6 +53,19 @@ object Share {
         context.startActivity(Intent.createChooser(send, "Share “${t.title}”").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
+    /** Radiance Music's own page, for telling friends about it. */
+    const val SITE = "https://music.radianceph.com"
+
+    /** Radiance Music itself to a friend (after a 4 or 5 star rating): Android's share menu with its page. */
+    fun app(context: Context) {
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "Radiance Music")
+            putExtra(Intent.EXTRA_TEXT, "Try Radiance Music: $SITE")
+        }
+        context.startActivity(Intent.createChooser(send, "Share Radiance Music").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
     /** Saves a story [video] in Pictures/Radiance Music, beside the cards. Its address. */
     fun saveVideo(context: Context, t: Track, video: File): Uri {
         val values = ContentValues().apply {

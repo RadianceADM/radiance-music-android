@@ -26,6 +26,7 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.School
+import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.QrCode2
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.SystemUpdate
@@ -52,6 +53,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.github.radianceadm.music.App
+import io.github.radianceadm.music.feedback.Feedback
 import io.github.radianceadm.music.server.Server
 import io.github.radianceadm.music.split.Splits
 import io.github.radianceadm.music.update.Updates
@@ -108,6 +110,7 @@ fun SettingsScreen(onClose: () -> Unit, onGuide: () -> Unit = {}, onOpenServer: 
         }
         SettingsGroup(null) {
             SettingsItem(Icons.Rounded.School, "How to use it", "The five things to know, as on the first day", arrow = true) { onGuide() }
+            SettingsItem(Icons.Rounded.Star, "Rate Radiance Music", "Are you enjoying it? A few stars, and anything you'd like to tell us", arrow = true) { Feedback.openNow(context) }
             SettingsItem(Icons.Rounded.Info, "About Radiance Music", "${Updates.current(context)}, open beta. Updates, what's new, and where to tell us what breaks", arrow = true) { about = true }
         }
     }
