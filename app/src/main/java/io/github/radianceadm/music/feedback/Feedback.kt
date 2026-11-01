@@ -129,11 +129,12 @@ class Sender(
  */
 object Feedback {
     /**
-     * Google's "Web" client ID for Radiance Music (the admin's audience): the one
-     * from the owner's Google Cloud project "Radiance Music". Empty until it's made:
-     * then Send says sign-in isn't ready yet.
+     * Google's "Web" client ID for Radiance Music (the admin's audience), from the
+     * owner's Google Cloud project "radiance-music" (2026-11-01). Only the release
+     * key's builds get a token (the Android client has its SHA-1); an empty ID
+     * makes Send say sign-in isn't ready yet.
      */
-    const val WEB_CLIENT_ID = ""
+    const val WEB_CLIENT_ID = "439537327949-vfktmgtdtamf752f0mc7q3ol47ik44b4.apps.googleusercontent.com"
     const val PRIVACY = "https://music.radianceph.com/privacy"
 
     const val MISSING = "Pick Yes! or Not really, and tap the stars for all five."
