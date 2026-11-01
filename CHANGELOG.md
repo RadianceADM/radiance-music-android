@@ -7,6 +7,8 @@
   say. Sending signs you in with Google in one tap; your name and email are kept with your
   rating (music.radianceph.com/privacy). Not now, or Don't ask again. Any time: Settings → Rate
   Radiance Music. Four or five stars? Share Radiance Music with a friend.
+- Home's "Play your mix" and "Liked, A to Z" no longer break in two: when they don't fit side by
+  side (a bigger font), the second goes under the first.
 
 ## 0.5.15
 
