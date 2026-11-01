@@ -64,6 +64,9 @@ class ScreensTest {
     @Test fun about() = shot("about") { AboutScreen(onClose = {}) }
     @Test fun library() { songs(); shot("library") { LibraryScreen(PaddingValues(), onSettings = {}) } }
     @Test fun home() { songs(); shot("home") { HomeScreen(PaddingValues(), onSearch = {}, onSettings = {}) } }
+    /** The largest system font on a narrow phone: the hero's buttons stay whole (android#15). */
+    @Config(qualifiers = "w360dp-h780dp-xxhdpi", fontScale = 2.0f)
+    @Test fun homeLargestFont() { songs(); shot("home-largest-font") { HomeScreen(PaddingValues(), onSearch = {}, onSettings = {}) } }
     @Test fun nowPlaying() = shot("now-playing") { NowPlayingScreen(onClose = {}) }
     @Test fun lyricPicker() = shot("lyric-picker") {
         val lines = listOf("I'm in the mood for dancing", "Romancing, ooh", "Give it up, it's a beautiful night", "So I'm dancing with my baby", "And it feels so right", "Under the stars, under the lights", "We're never going home tonight")

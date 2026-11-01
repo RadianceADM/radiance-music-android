@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.16
+
+- **"Are you enjoying Radiance Music?"** Now and then (after a week and 30 songs, at most once
+  a month, never mid-song) the app asks for five quick star ratings and anything you'd like to
+  say. Sending signs you in with Google in one tap; your name and email are kept with your
+  rating (music.radianceph.com/privacy). Not now, or Don't ask again. Any time: Settings → Rate
+  Radiance Music. Four or five stars? Share Radiance Music with a friend.
+
 ## 0.5.15
 
 - **The A to Z rail stays beside your songs:** it starts at the first song, so it no longer

@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import kotlinx.coroutines.launch
 import io.github.radianceadm.music.data.Library
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.platform.LocalDensity
@@ -104,6 +106,7 @@ private fun greeting(): String = when (Calendar.getInstance().get(Calendar.HOUR_
     else -> "Good evening"
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun HomeScreen(pad: PaddingValues, onSearch: () -> Unit, onSettings: () -> Unit) {
     val lib = App.instance.library
@@ -128,9 +131,11 @@ fun HomeScreen(pad: PaddingValues, onSearch: () -> Unit, onSettings: () -> Unit)
                 if (liked.isEmpty()) {
                     Button(onClick = onSearch) { Labeled(Icons.Rounded.Search, "Search for music") }
                 } else {
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Button(onClick = { hub.play(liked.shuffled(), 0) }) { Labeled(Icons.Rounded.Shuffle, "Play your mix") }
-                        FilledTonalButton(onClick = { hub.play(liked, 0) }, colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color.White.copy(alpha = 0.16f), contentColor = Color.White)) { Labeled(Icons.Rounded.SortByAlpha, "Liked, A to Z") }
+                    // each button whole, on one line: the second goes under the first when they don't
+                    // fit side by side (owner, 2026-11-01: "yung a to z ... 2 lines", android#15)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(onClick = { hub.play(liked.shuffled(), 0) }) { Labeled(Icons.Rounded.Shuffle, "Play your mix", oneLine = true) }
+                        FilledTonalButton(onClick = { hub.play(liked, 0) }, colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color.White.copy(alpha = 0.16f), contentColor = Color.White)) { Labeled(Icons.Rounded.SortByAlpha, "Liked, A to Z", oneLine = true) }
                     }
                 }
             }
