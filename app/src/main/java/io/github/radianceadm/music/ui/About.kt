@@ -141,11 +141,6 @@ fun AboutScreen(onClose: () -> Unit) {
         }
         Spacer(Modifier.height(12.dp))
         Text("© 2026 Radiance Innovation Centers", color = Brand.Dim, style = MaterialTheme.typography.labelMedium)
-        Text(
-            "Saving songs and videos from YouTube goes against YouTube's terms of service: your choice to make, for your own use.",
-            color = Brand.Dim, style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 36.dp, vertical = 6.dp),
-        )
     }
 }
 

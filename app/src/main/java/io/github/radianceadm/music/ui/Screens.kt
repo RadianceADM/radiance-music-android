@@ -5,6 +5,11 @@ import androidx.compose.foundation.background
 import kotlinx.coroutines.launch
 import io.github.radianceadm.music.data.Library
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.layout.height
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.input.pointer.pointerInput
@@ -308,7 +313,7 @@ fun LibraryScreen(pad: PaddingValues, onSettings: () -> Unit, onParty: () -> Uni
     val list = rememberLazyListState()
     // the A to Z rail, as the computer's: on Liked Songs once there are enough to scroll
     val rail = tab == 0 && shown.size >= 12
-    Box(Modifier.fillMaxSize()) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
     LazyColumn(
         Modifier.fillMaxSize(),
         state = list,
@@ -358,7 +363,25 @@ fun LibraryScreen(pad: PaddingValues, onSettings: () -> Unit, onParty: () -> Uni
     if (rail) {
         // the songs are the list's last items: whatever comes before them is the header
         val head = (list.layoutInfo.totalItemsCount - shown.size).coerceAtLeast(0)
-        AzRail(shown, list, head, Modifier.align(Alignment.CenterEnd).padding(top = pad.calculateTopPadding() + 40.dp, bottom = pad.calculateBottomPadding() + 8.dp, end = 2.dp))
+        // the rail stands beside the songs only, never over the search or Play and Shuffle
+        // (owner, 2026-11-01: "yung scroll na may a-z nag ooverlap sa search and shuffle
+        // button"): it starts at the first song and rises to the top as the header scrolls away
+        val density = LocalDensity.current
+        val songsAt by remember(list, head) {
+            derivedStateOf {
+                val info = list.layoutInfo
+                when {
+                    list.firstVisibleItemIndex >= head -> 0
+                    else -> info.visibleItemsInfo.firstOrNull { it.index == head }?.let { it.offset - info.viewportStartOffset } ?: -1
+                }
+            }
+        }
+        if (songsAt >= 0) {
+            val top = maxOf(pad.calculateTopPadding() + 8.dp, with(density) { songsAt.toDp() } + 4.dp)
+            val room = maxHeight - pad.calculateBottomPadding() - 8.dp - top
+            // all 27 letters, smaller when there's less room; too little: it waits for a scroll
+            if (room >= RAIL_LEAST) AzRail(shown, list, head, minOf(room, RAIL_MOST), Modifier.align(Alignment.TopEnd).padding(top = top, end = 2.dp))
+        }
     }
     }
 }
@@ -369,6 +392,10 @@ private const val HISTORY = "history"
 
 /** The rail's letters, in the order songs are filed (as the computer's). */
 private const val AZ = "ABCDEFGHIJKLMNOPQRSTUVWXYZ#"
+
+/** The rail's height: its letters at their full size, and the least they can shrink to. */
+private val RAIL_MOST = 15.dp * AZ.length + 12.dp
+private val RAIL_LEAST = 9.dp * AZ.length + 12.dp
 
 /** A song's letter on the rail: its title's first letter as filed, or # for anything else. */
 fun letterOf(t: Track): Char {
@@ -383,7 +410,7 @@ fun letterOf(t: Track): Char {
  * and the letter of the songs at the top is lit.
  */
 @Composable
-private fun AzRail(songs: List<Track>, list: LazyListState, head: Int, modifier: Modifier) {
+private fun AzRail(songs: List<Track>, list: LazyListState, head: Int, height: Dp, modifier: Modifier) {
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
     val firsts = remember(songs) {
@@ -406,7 +433,7 @@ private fun AzRail(songs: List<Track>, list: LazyListState, head: Int, modifier:
     }
     Box(modifier) {
         Column(
-            Modifier.width(26.dp).clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = if (held != null) 0.1f else 0.04f)).padding(vertical = 6.dp)
+            Modifier.width(26.dp).height(height).clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = if (held != null) 0.1f else 0.04f)).padding(vertical = 6.dp)
                 .pointerInput(firsts, head) {
                     detectVerticalDragGestures(
                         onDragStart = { jump(it.y, size.height) },
@@ -418,6 +445,8 @@ private fun AzRail(songs: List<Track>, list: LazyListState, head: Int, modifier:
                 .pointerInput(firsts, head) { detectTapGestures(onPress = { jump(it.y, size.height); tryAwaitRelease(); held = null }) },
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            val each = (height - 12.dp) / AZ.length
+            val type = with(LocalDensity.current) { (each * 0.75f).toSp() }.let { if (it < 11.sp) it else 11.sp }
             AZ.forEach { c ->
                 val has = c in firsts
                 Text(
@@ -427,8 +456,8 @@ private fun AzRail(songs: List<Track>, list: LazyListState, head: Int, modifier:
                         has -> Brand.Orange
                         else -> Brand.Orange.copy(alpha = 0.28f)
                     },
-                    fontSize = 11.sp, lineHeight = 14.sp, fontWeight = FontWeight.ExtraBold,
-                    modifier = Modifier.size(20.dp, 15.dp).clip(CircleShape).background(if (c == lit) Brand.Orange else Color.Transparent).wrapContentHeight(),
+                    fontSize = type, lineHeight = type, fontWeight = FontWeight.ExtraBold,
+                    modifier = Modifier.size(20.dp, each).clip(CircleShape).background(if (c == lit) Brand.Orange else Color.Transparent).wrapContentHeight(),
                     textAlign = TextAlign.Center,
                 )
             }

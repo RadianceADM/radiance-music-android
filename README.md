@@ -74,8 +74,7 @@ runs the device tests on a connected phone (a story video made with a song's sou
 ## YouTube
 
 YouTube Music plays through [NewPipe Extractor](https://github.com/TeamNewPipe/NewPipeExtractor),
-which keeps up with YouTube's changes. Saving songs and videos from YouTube goes against
-YouTube's terms of service; that's your choice to make, for your own use.
+which keeps up with YouTube's changes.
 
 ## Licence
 

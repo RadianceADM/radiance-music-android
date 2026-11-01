@@ -13,8 +13,8 @@ android {
         applicationId = "io.github.radianceadm.music"
         minSdk = 29 // Android 10: saving into Music/ needs no storage permission
         targetSdk = 36
-        versionCode = 23
-        versionName = "0.5.14"
+        versionCode = 24
+        versionName = "0.5.15"
         // 64-bit Arm only: every phone that can split a song (the splitter needs a few GB of memory)
         ndk { abiFilters += listOf("arm64-v8a") }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

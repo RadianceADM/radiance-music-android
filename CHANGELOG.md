@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.15
+
+- **The A to Z rail stays beside your songs:** it starts at the first song, so it no longer
+  covers the search box or the Shuffle button, and it rises to the top as you scroll. On a
+  shorter screen its letters get a little smaller so all of them fit.
+- The line about YouTube's terms is gone from About.
+
 ## 0.5.14
 
 - **Join a Radiance Music Server:** your own server, or a friend's. Settings → Servers → Join a
