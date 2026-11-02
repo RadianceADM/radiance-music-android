@@ -38,6 +38,23 @@ class Api(base: String = BASE, private val client: OkHttpClient = Http.client) {
         call("DELETE", "/api/music/token", token, null)
     }
 
+    /**
+     * Report a Problem (radianceph#43): [body] is Report.What.body. No sign-in. The report's
+     * code to quote ("RM-0123"). A 503 means reports are switched off on the admin.
+     */
+    fun report(body: JSONObject): String {
+        val j = try {
+            call("POST", "/api/music/reports", null, body)
+        } catch (e: Refused.NotReady) {
+            throw Refused.ReportsOff()
+        } catch (e: Refused.Down) {
+            if (e.message?.contains("HTTP 503") == true) throw Refused.ReportsOff() else throw e
+        }
+        return j.optString("code").takeIf { it.isNotBlank() }
+            ?: j.optLong("id", 0L).takeIf { it > 0 }?.let { "RM-%04d".format(it) }
+            ?: "sent"
+    }
+
     private fun call(method: String, path: String, token: String?, body: JSONObject?, signingIn: Boolean = false): JSONObject {
         val req = Request.Builder().url(base + path)
             .header("Accept", "application/json")
@@ -112,6 +129,8 @@ sealed class Refused(words: String, detail: String) : Plain(words, detail) {
     class NotReady : Refused("Sign-in isn't ready yet on our side. Your answers are kept: try again later.", "503 not_configured")
     /** The admin couldn't reach Google just now. */
     class GoogleBusy : Refused("Google isn't answering right now. Try again in a few minutes.", "503 google_unavailable")
+    /** Report a Problem is switched off on the admin. */
+    class ReportsOff : Refused("Radiance Music's site isn't taking these right now. Try again later, or email hello@radianceph.com.", "503 reports off")
     /** Anything else (the site down, a 500): try later. */
     class Down(code: Int, message: String?) : Refused(
         if (code in 500..599) "Radiance Music's site isn't answering right now. Try again in a few minutes." else message ?: "That didn't go through. Try again.",

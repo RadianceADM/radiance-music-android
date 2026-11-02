@@ -86,6 +86,8 @@ fun AboutScreen(onClose: () -> Unit) {
     val version = remember { Updates.current(context) }
     val icon = remember { runCatching { context.packageManager.getApplicationIcon(context.applicationInfo).toBitmap(288, 288).asImageBitmap() }.getOrNull() }
     val open = { url: String -> openLink(context, url) }
+    // Report a problem: the sheet with what will be sent (ReportSheet)
+    var reporting by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { if (Updates.state.value is Updates.State.Unknown) Updates.check(context) }
     Column(
         Modifier.fillMaxSize().background(Brand.Night).statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(bottom = 36.dp),
@@ -113,9 +115,11 @@ fun AboutScreen(onClose: () -> Unit) {
             SettingsGroup("Updates") { UpdatePanel() }
             WhatsNew(context)
             SettingsGroup("Tell us what breaks") {
-                SettingsItem(Icons.Rounded.BugReport, "Report a problem", "On GitHub: what you did, and what happened") { open("https://github.com/RadianceADM/radiance-music-android/issues") }
+                SettingsItem(Icons.Rounded.BugReport, "Report a problem", "Send us what went wrong, with the app's log (you see it all first)") { reporting = true }
+                SettingsItem(Icons.Rounded.Public, "Report on GitHub", "What you did, and what happened, in the open") { open("https://github.com/RadianceADM/radiance-music-android/issues") }
                 SettingsItem(Icons.Rounded.MailOutline, "Email us", "hello@radianceph.com") { open("mailto:hello@radianceph.com?subject=Radiance%20Music%20$version%20(Android)") }
             }
+            if (reporting) ReportSheet(onDone = { reporting = false })
             SettingsGroup("More") {
                 SettingsItem(Icons.Rounded.Public, "music.radianceph.com", "The app for your computer, and what's coming") { open("https://music.radianceph.com") }
                 SettingsItem(Icons.Rounded.Code, "Free and open source", "GNU GPL, version 3 or later: the code is on GitHub") { open("https://github.com/RadianceADM/radiance-music-android") }
