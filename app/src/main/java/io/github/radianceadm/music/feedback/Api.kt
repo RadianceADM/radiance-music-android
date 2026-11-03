@@ -80,6 +80,7 @@ class Api(base: String = BASE, private val client: OkHttpClient = Http.client) {
                 code == 401 && signingIn -> Refused.GoogleSaidNo(error)
                 code == 401 -> Refused.SignedOut()
                 code == 422 -> Refused.Check(j?.optString("message")?.takeIf { it.isNotBlank() } ?: Refused.CHECK, errors(j))
+                code == 413 -> Refused.Check(j?.optString("message")?.takeIf { it.isNotBlank() } ?: "That's too long to send: make it shorter and send again.", errors(j))
                 code == 429 -> Refused.TooMany(waitSeconds(retryAfter, now))
                 code == 503 && error == "not_configured" -> Refused.NotReady()
                 code == 503 && error == "google_unavailable" -> Refused.GoogleBusy()

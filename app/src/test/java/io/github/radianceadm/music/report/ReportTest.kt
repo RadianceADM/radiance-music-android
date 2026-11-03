@@ -43,6 +43,10 @@ class ReportTest {
         val text = "one\ntwo\nthree\nfour\n"
         assertEquals(text, Report.newest(text, 100))
         assertEquals("four\n", Report.newest(text, 9))
+        // counted in UTF-8 bytes, as the admin counts: 3 a letter here
+        val wide = "一二三\n四五六\n"
+        assertEquals("四五六\n", Report.newest(wide, 12))
+        assertTrue(Report.newest("あ".repeat(100_000), Report.MOST_LOG).toByteArray().size <= Report.MOST_LOG)
     }
 
     @Test fun theBodyIsWhatTheAdminTakes() {
@@ -51,6 +55,10 @@ class ReportTest {
         for (k in listOf("platform", "version", "system", "log", "install")) assertTrue(k, empty.has(k))
         assertEquals("android", empty.getString("platform"))
         assertEquals(Report.MOST_NOTE, what.body("a".repeat(3000)).getString("note").length)
+        // the admin needs a log and a short system
+        val bare = what.copy(log = " \n", system = "x".repeat(600))
+        assertEquals(Report.NO_LOG, bare.body("").getString("log"))
+        assertEquals(Report.MOST_SYSTEM, bare.body("").getString("system").length)
     }
 
     @Test fun sendingGivesTheCodeAndSaysWhenItIsSwitchedOff() {

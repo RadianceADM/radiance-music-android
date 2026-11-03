@@ -17,8 +17,13 @@ import java.util.UUID
  * email addresses taken out.
  */
 object Report {
+    /** The admin's limits (radianceph#43): the note in characters, the log in UTF-8 bytes (its own is 204,800), the system in characters. */
     const val MOST_NOTE = 2000
     const val MOST_LOG = 200_000
+    const val MOST_SYSTEM = 500
+
+    /** Sent instead of an empty log (the admin needs one). */
+    const val NO_LOG = "(the app's log is empty)\n"
 
     /** What will be sent, shown in full before Send. */
     data class What(
@@ -33,8 +38,8 @@ object Report {
             val j = JSONObject()
                 .put("platform", platform)
                 .put("version", version)
-                .put("system", system)
-                .put("log", log)
+                .put("system", system.take(MOST_SYSTEM))
+                .put("log", log.ifBlank { NO_LOG })
                 .put("install", install)
             val n = note.trim().take(MOST_NOTE)
             if (n.isNotEmpty()) j.put("note", n)
@@ -74,10 +79,13 @@ object Report {
     /** Email addresses → "(email)". */
     fun scrub(text: String): String = EMAIL.replace(text, "(email)")
 
-    /** The last [most] characters of [text], starting at a whole line. */
+    /** The last [most] UTF-8 bytes of [text] (a song title in Japanese takes 3 a letter), starting at a whole line. */
     fun newest(text: String, most: Int): String {
-        if (text.length <= most) return text
-        val tail = text.substring(text.length - most)
+        val bytes = text.toByteArray(Charsets.UTF_8)
+        if (bytes.size <= most) return text
+        var from = bytes.size - most
+        while (from < bytes.size && (bytes[from].toInt() and 0xC0) == 0x80) from++ // not inside a letter
+        val tail = String(bytes, from, bytes.size - from, Charsets.UTF_8)
         val nl = tail.indexOf('\n')
         return if (nl >= 0) tail.substring(nl + 1) else tail
     }
