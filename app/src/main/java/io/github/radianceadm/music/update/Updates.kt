@@ -80,15 +80,14 @@ object Updates {
 
     fun current(context: Context): String = info(context).versionName.orEmpty()
 
-    /** At start: what the last look found, then a new look if it's been 6 hours. */
+    /** At start: a new look every time (what the last look found only when this one can't be
+     *  done, offline). Offering the last look's at once, and looking only every 6 hours, offered a
+     *  day-old version with newer ones out (the computer app, 2026-11-04: 0.7.13 offered 0.7.15). */
     fun atStart(app: App) {
-        val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         clean(app)
-        remembered(app)?.let { if (newer(it.version, current(app))) _state.value = if (file(app, it).exists()) State.Ready(it) else State.Available(it) }
-        if (System.currentTimeMillis() - prefs.getLong("checked", 0) < EVERY_MS) return
         app.scope.launch {
             delay(8_000) // after the start, not during it
-            check(app)
+            check(app, quiet = true)
         }
     }
 
@@ -110,14 +109,14 @@ object Updates {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("skipped", r.version).apply()
     }
 
-    /** Looks for a newer release now. */
-    fun check(context: Context) {
+    /** Looks for a newer release now (`quiet`: at start, saying nothing if it can't). */
+    fun check(context: Context, quiet: Boolean = false) {
         val app = context.applicationContext as App
         if (job?.isActive == true) return
         val before = _state.value
         if (before is State.Downloading || before is State.Ready || before is State.Installing || before is State.Allow) return // one's under way
         job = app.scope.launch {
-            if (before !is State.Available) _state.value = State.Checking
+            if (before !is State.Available && !quiet) _state.value = State.Checking
             val found = runCatching { latest() }
             found.onSuccess { r ->
                 app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
@@ -131,7 +130,13 @@ object Updates {
                 }
             }.onFailure { e ->
                 Log.w(TAG, "couldn't look for updates", e)
-                _state.value = if (before is State.Available) before else State.Failed("Couldn't look for updates: ${e.message ?: "no connection"}", null)
+                val last = remembered(app)?.takeIf { newer(it.version, current(app)) }
+                _state.value = when {
+                    before is State.Available -> before
+                    quiet && last != null -> if (file(app, last).exists()) State.Ready(last) else State.Available(last) // offline: the last look's
+                    quiet -> before
+                    else -> State.Failed("Couldn't look for updates: ${e.message ?: "no connection"}", null)
+                }
             }
         }
     }
@@ -369,11 +374,13 @@ object Updates {
     private const val NOTE_ID = 7_013
 
     /** Downloads of versions that are on now (or older) aren't needed any more. */
+    /** Downloads of versions that are on now (or older), and older than the newest known, go. */
     private fun clean(context: Context) {
         val now = current(context)
+        val newest = remembered(context)?.version
         File(context.cacheDir, "update").listFiles()?.forEach { f ->
             val v = f.name.removePrefix("RadianceMusic-").removeSuffix(".part").removeSuffix(".apk")
-            if (!newer(v, now)) f.delete()
+            if (!newer(v, now) || (newest != null && newer(newest, v))) f.delete()
         }
     }
 
