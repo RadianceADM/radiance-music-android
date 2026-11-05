@@ -67,6 +67,11 @@ class MainActivity : ComponentActivity() {
 
     /** A Radiance Music share's QR read by the phone's camera: straight to it. A server's invite (its join page): Settings → Servers, to join. */
     private fun opened(intent: Intent?) {
+        // the sharing notification, tapped: its sheet (what's moving, Stop)
+        if (intent?.getBooleanExtra(io.github.radianceadm.music.share.ShareService.OPEN, false) == true) {
+            if (App.instance.shareOpen.value == null) App.instance.shareOpen.value = App.ShareAsk(null)
+            return
+        }
         val data = intent?.data ?: return
         if (data.scheme != "radiancemusic") return
         Servers.joinLink(data.toString())?.let {

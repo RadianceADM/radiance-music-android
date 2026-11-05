@@ -21,6 +21,8 @@ import io.github.radianceadm.music.source.LyricsFinder
 import io.github.radianceadm.music.source.YouTube
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.coroutines.resume
@@ -40,12 +42,26 @@ object Saver {
     fun coverFile(context: Context, t: Track) = File(context.filesDir, "covers/${safe(t.key)}.jpg")
     fun lyricsFile(context: Context, t: Track) = File(context.filesDir, "lyrics/${safe(t.key)}.lrc")
 
-    /** Saves what the song still lacks (worker thread; a minute or two). The song with its files. */
-    suspend fun save(context: Context, t: Track, say: (String) -> Unit = {}): Track = withContext(Dispatchers.IO) {
+    private val _got = MutableStateFlow<Pair<String, Float>?>(null)
+    /** The song being saved now (its key) and how much of it is here, 0-1: a split waiting for it shows that. */
+    val got: StateFlow<Pair<String, Float>?> = _got
+
+    /**
+     * Saves what the song still lacks (worker thread; a minute or two). The song with its files.
+     * [songSaved]: the song itself is here (before its cover, lyrics and video), so a split
+     * waiting for it starts at once.
+     */
+    suspend fun save(context: Context, t: Track, say: (String) -> Unit = {}, songSaved: (Track) -> Unit = {}): Track = withContext(Dispatchers.IO) {
         var out = t
         if (out.file == null) {
             say("Saving “${t.title}”…")
-            out = out.copy(file = saveSong(context, t).toString())
+            _got.value = t.key to 0f
+            try {
+                out = out.copy(file = saveSong(context, t).toString())
+            } finally {
+                _got.value = null
+            }
+            songSaved(out)
         }
         runCatching { saveCover(context, out) }
         runCatching { lyrics(context, out) }
@@ -90,7 +106,7 @@ object Saver {
         try {
             val s = YouTube.audio(t.id)
             val got = File(cache, "sound.${s.ext}")
-            got.outputStream().use { Http.download(s.url, it, s.size) }
+            got.outputStream().use { Http.download(s.url, it, s.size) { f -> _got.value = t.key to f * 0.85f } }
             val m4a = if (s.ext == "m4a") got else File(cache, "sound.m4a").also { out ->
                 runCatching { export(context, Composition.Builder(EditedMediaItemSequence.Builder(audioOnly(got)).build()).build(), out) }.getOrElse {
                     // not possible on this phone: YouTube's AAC version instead
@@ -98,6 +114,7 @@ object Saver {
                     out.outputStream().use { o -> Http.download(aac.url, o, aac.size) }
                 }
             }
+            _got.value = t.key to 0.95f
             return keep(context, collection, "${name(t)}.m4a", "audio/mp4", "Music/Radiance Music") { out -> m4a.inputStream().use { it.copyTo(out) } }
         } finally {
             cache.deleteRecursively()

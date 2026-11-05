@@ -25,6 +25,12 @@ object Splitter {
     private const val TAG = "radiance-split"
 
     const val RATE = 44100
+    // where each step starts on this split's bar (reading ~15%, the split itself the rest)
+    private const val READ_FROM = 0.02f
+    private const val RESAMPLE_FROM = 0.06f
+    private const val LOAD_FROM = 0.14f
+    private const val SPLIT_FROM = 0.15f
+
     /** What a split here makes: the song's two halves. */
     val PARTS = Spleeter.PARTS
     /** A song split in four (on the computer, a server, or here before 0.5.17). */
@@ -58,22 +64,29 @@ object Splitter {
     /** Where a part sent from another device goes ([ext]: its own kind of file). */
     fun partFileFor(context: Context, key: String, part: String, ext: String) = File(dir(context), "${safe(key)}.$part.$ext")
 
-    /** What the splitter is doing, for the screen and the notification. */
-    data class Step(val what: String, val done: Float, val secondsLeft: Int? = null)
+    /**
+     * What the splitter is doing, for the screen and the notification: [done] so far, and
+     * [next] where this step ends (the bar glides toward it meanwhile, never stuck).
+     */
+    data class Step(val what: String, val done: Float, val secondsLeft: Int? = null, val next: Float = done)
 
     /**
      * Splits [t] (its saved file) with [threads] of the phone's cores. The
      * two parts appear only when both are done (a stopped split leaves nothing).
      */
-    fun split(context: Context, t: Track, threads: Int, say: (Step) -> Unit, cancelled: () -> Boolean) {
+    fun split(context: Context, t: Track, threads: Int, say: (Step) -> Unit, cancelled: () -> Boolean, from: Float = 0f) {
+        // this split's own 0..1 on the bar after [from] (the song's download, when it waited for that)
+        fun at(p: Float) = from + (1f - from) * p
+        fun step(what: String, p: Float, next: Float = p, left: Int? = null) = say(Step(what, at(p), left, at(maxOf(p, next))))
         val song = t.file ?: fail("The song isn't saved on this phone yet.")
         val work = File(context.cacheDir, "split").apply { deleteRecursively(); mkdirs() }
         val out = dir(context).apply { mkdirs() }
         try {
-            say(Step("Getting ready", 0f))
+            step("Getting ready", 0f, READ_FROM)
             val delay = Pcm.encoderDelay(context, work)
-            val decoded = Pcm.decode(context, Uri.parse(song), File(work, "song.f32")) { say(Step("Reading the song", it * 0.5f / 100)) }
-            val audio = Pcm.resample(decoded, RATE, File(work, "song44.f32")) { say(Step("Reading the song", 0.005f + it * 0.5f / 100)) }
+            val decoded = Pcm.decode(context, Uri.parse(song), File(work, "song.f32")) { step("Reading the song", READ_FROM + it * (RESAMPLE_FROM - READ_FROM), RESAMPLE_FROM) }
+            // at the splitter's rate on all the cores it may use (the same sound, sooner)
+            val audio = Pcm.resample(decoded, RATE, File(work, "song44.f32"), threads) { step("Reading the song", RESAMPLE_FROM + it * (LOAD_FROM - RESAMPLE_FROM), LOAD_FROM) }
             if (audio !== decoded) decoded.file.delete()
             if (cancelled()) return
             val x = audio.map()
@@ -87,13 +100,13 @@ object Splitter {
                 addConfigEntry("session.intra_op.allow_spinning", "0") // cores rest between pieces (battery, heat)
             }
             val began = System.nanoTime()
-            say(Step("Loading the splitter", 0.01f))
+            step("Loading the splitter", LOAD_FROM, SPLIT_FROM + 0.04f)
             val vocals = env.createSession(model(context, Model.VOCALS), opts)
             val music = try { env.createSession(model(context, Model.MUSIC), opts) } catch (e: Throwable) { vocals.close(); throw e }
             Log.i(TAG, "models loaded in ${(System.nanoTime() - began) / 1_000_000} ms, $threads threads")
 
             val encoders = PARTS.associateWith { Pcm.Encoder(File(work, "$it.m4a"), RATE) }
-            var shown = 0.01f
+            var shown = at(SPLIT_FROM)
             val skip = IntArray(PARTS.size) { delay.coerceAtLeast(0) } // the encoder's own lead-in, taken off the start
             if (delay < 0) encoders.values.forEach { it.write(FloatArray(-2 * delay), 0, -delay) }
             try {
@@ -103,8 +116,9 @@ object Splitter {
                     encoders.getValue(PARTS[p]).write(buf, 2 * from, frames - from)
                 }, { done, of, secondsLeft ->
                     Log.i(TAG, "block $done/$of")
-                    shown = 0.01f + 0.98f * done / of
-                    say(Step("Splitting", shown, secondsLeft + 3))
+                    val p = SPLIT_FROM + (0.99f - SPLIT_FROM) * done / of
+                    shown = at(p)
+                    step("Splitting", p, SPLIT_FROM + (0.99f - SPLIT_FROM) * minOf(done + 1, of) / of, secondsLeft + 3)
                 }, cancelled, { Guard.rest(context, { why -> say(Step(why, shown)) }, cancelled) })
                 if (cancelled()) {
                     encoders.values.forEach { runCatching { it.close() } }

@@ -20,9 +20,10 @@ class MixerTest {
         for (p in Mixer.PARTS + Mixer.HALVES) assertEquals(p, 1f, g(p))
     }
 
-    @Test fun karaokeTakesTheSingingOut() {
+    @Test fun karaokeTakesTheSingingDownNotOut() {
+        // as Apple Music Sing: some singing stays at first (owner: "wag mo i max yung mute ng vocals")
         mixer.voice(Voice.Karaoke)
-        assertEquals(0f, g("vocals"))
+        assertEquals(0.1f, g("vocals"))
         for (p in listOf("drums", "bass", "other", "music")) assertEquals(p, 1f, g(p))
         mixer.voice(Voice.Song) // tap again: the whole song
         for (p in Mixer.PARTS + Mixer.HALVES) assertEquals(p, 1f, g(p))
@@ -43,6 +44,7 @@ class MixerTest {
         mixer.voice(Voice.Song)
         mixer.voice(Voice.Karaoke) // the level stays for next time
         assertEquals(0.3f, g("vocals"))
+        assertEquals(0.3f, App.instance.getSharedPreferences("mixer", 0).getFloat(Mixer.LEVEL, -1f))
         mixer.singing(5f)
         assertEquals(1f, mixer.singing.value)
         mixer.singing(-1f)

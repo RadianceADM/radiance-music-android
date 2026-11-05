@@ -71,7 +71,8 @@ fun ShareSongsSheet(songs: List<Track>?, scan: Boolean = false, onDismiss: () ->
     val share = App.instance.share
     val state by share.state.collectAsState()
     ModalBottomSheet(
-        onDismissRequest = { if (state is Session.State.Idle || state is Session.State.Done || state is Session.State.Failed) { share.close(); onDismiss() } else onDismiss() },
+        // closed: a QR nobody is using stops; songs on their way go on (the notification has Stop)
+        onDismissRequest = { share.left(); onDismiss() },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = Brand.Sheet,
     ) {

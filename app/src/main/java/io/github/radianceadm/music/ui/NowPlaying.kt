@@ -123,6 +123,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -167,6 +168,7 @@ import io.github.radianceadm.music.split.Model
 import io.github.radianceadm.music.split.Setup
 import io.github.radianceadm.music.split.SplitService
 import io.github.radianceadm.music.split.Splits
+import io.github.radianceadm.music.split.Splitter
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -603,8 +605,8 @@ private fun KaraokeButton(t: Track?, onAskServer: () -> Unit) {
     val voice by mixer.voice.collectAsState()
     val singing by mixer.singing.collectAsState()
     val ready by mixer.available.collectAsState()
-    val now by app.splits.now.collectAsState()
     val on = voice == Mixer.Voice.Karaoke
+    val progress = rememberKaraokeProgress(t)
     val notesFirst = rememberNotesFirst()
     val haptics = LocalHapticFeedback.current
     var sliding by remember { mutableStateOf(false) }
@@ -664,8 +666,7 @@ private fun KaraokeButton(t: Track?, onAskServer: () -> Unit) {
         ) {
             val waiting = on && !ready && t != null
             if (waiting) {
-                val step = now?.takeIf { it.track.key == t?.key }?.step
-                if (step != null && step.done > 0f) CircularProgressIndicator(progress = { step.done }, color = Brand.Orange, trackColor = Color.White.copy(alpha = 0.15f), strokeWidth = 2.5.dp, modifier = Modifier.size(46.dp))
+                if (progress != null) CircularProgressIndicator(progress = { progress }, color = Brand.Orange, trackColor = Color.White.copy(alpha = 0.15f), strokeWidth = 2.5.dp, modifier = Modifier.size(46.dp))
                 else CircularProgressIndicator(color = Brand.Orange, strokeWidth = 2.5.dp, modifier = Modifier.size(46.dp))
             }
             Box(Modifier.size(40.dp).clip(CircleShape).background(if (on) Color.White else Color.Transparent), contentAlignment = Alignment.Center) {
@@ -701,6 +702,53 @@ internal fun SingSlider(level: Float) {
  * Under the row while karaoke (or the singing only) is on but this song's
  * parts aren't here yet: what it's waiting for, in a line. It plays whole meanwhile.
  */
+/**
+ * A split's progress as the screen shows it (owner, 2026-11-05: "paarang antagal niya lang sa
+ * 0% dapat mag lagay tayo ng illusion sa progress"): gliding on toward where the current step
+ * ends while the next real number comes (downloading and reading the song, loading the
+ * splitter, each piece of the split). Never back, never stuck.
+ */
+@Composable
+internal fun rememberSplitShown(key: String?, step: Splitter.Step?): Float {
+    var shown by remember(key) { mutableFloatStateOf(0f) }
+    val latest by rememberUpdatedState(step)
+    LaunchedEffect(key) {
+        while (true) {
+            val s = latest
+            val real = s?.done ?: 0f
+            val ceiling = maxOf(real, s?.next ?: WAITING_NEXT) - 0.005f
+            shown = when {
+                shown < real -> shown + (real - shown) * 0.3f // a real step: caught up quickly
+                shown < ceiling -> shown + (ceiling - shown) * 0.04f // meanwhile: gliding on, slower and slower
+                else -> shown
+            }
+            delay(50)
+        }
+    }
+    return shown
+}
+
+/** Not split yet, waiting its turn or getting ready: the bar creeps this far (of the split's own 0..1). */
+private const val WAITING_NEXT = 0.03f
+
+/**
+ * How far [t]'s karaoke is from ready, as the mic's ring and the line under it show it: its
+ * split here, or its parts coming from a server. Null: nothing to measure (a server to ask).
+ */
+@Composable
+private fun rememberKaraokeProgress(t: Track?): Float? {
+    val app = App.instance
+    val now by app.splits.now.collectAsState()
+    val queue by app.splits.queue.collectAsState()
+    val fetching by ServerSongs.fetching.collectAsState()
+    val key = t?.key
+    val here = now?.takeIf { it.track.key == key }?.step
+    val got = key?.let { fetching[it] }
+    val step = here ?: got?.let { Splitter.Step("Getting its parts", it, next = minOf(1f, it + 0.1f)) }
+    val shown = rememberSplitShown(key, step)
+    return if (step != null || queue.any { it.key == key }) shown else null
+}
+
 @Composable
 private fun KaraokeStatus(t: Track) {
     val app = App.instance
@@ -715,9 +763,13 @@ private fun KaraokeStatus(t: Track) {
     val mode = if (voice == Mixer.Voice.Karaoke) "Karaoke" else "Vocals only"
     val here = now?.takeIf { it.track.key == t.key }
     val server = Servers.of(t)
+    val shown = rememberKaraokeProgress(t)
+    val pct = "${((shown ?: 0f) * 100).toInt()} %"
+    val first = queue.firstOrNull()?.key == t.key
     val line = when {
-        here != null -> "$mode in a moment: ${here.step.what.lowercase()} · ${(here.step.done * 100).toInt()} %"
-        fetching[t.key] != null -> "$mode in a moment: getting its parts from ${server?.name ?: "the server"} · ${((fetching[t.key] ?: 0f) * 100).toInt()} %"
+        here != null -> "$mode in a moment: ${here.step.what.lowercase()} · $pct"
+        fetching[t.key] != null -> "$mode in a moment: getting its parts from ${server?.name ?: "the server"} · $pct"
+        first && setup == Setup.State.Ready -> "$mode in a moment: getting ready · $pct"
         queue.any { it.key == t.key } -> if (setup == Setup.State.Ready) "$mode once the song before it is split" else "$mode once the splitter is ready"
         problem != null -> problem.orEmpty()
         server != null && server.can.split && !ServerSongs.splitThere(t) -> "$mode: ask ${server.name} to split it, in the Mixer"
@@ -743,13 +795,14 @@ private fun SplitPanel(t: Track) {
     var cores by remember { mutableIntStateOf(splits.cores) }
     val here = now?.takeIf { it.track.key == t.key }
     val place = queue.indexOfFirst { it.key == t.key }
+    val shown = rememberSplitShown(t.key, here?.step)
     Column {
         when {
             here != null -> {
                 Text("Splitting this song", color = Color.White, style = MaterialTheme.typography.titleMedium)
-                Text(listOfNotNull(here.step.what, "${(here.step.done * 100).toInt()} %", here.step.secondsLeft?.let { SplitService.left(it) }).joinToString(" · "), color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
+                Text(listOfNotNull(here.step.what, "${(shown * 100).toInt()} %", here.step.secondsLeft?.let { SplitService.left(it) }).joinToString(" · "), color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
                 Gap(8.dp)
-                LinearProgressIndicator(progress = { here.step.done }, color = Brand.Orange, trackColor = Color.White.copy(alpha = 0.15f), modifier = Modifier.fillMaxWidth())
+                LinearProgressIndicator(progress = { shown }, color = Brand.Orange, trackColor = Color.White.copy(alpha = 0.15f), modifier = Modifier.fillMaxWidth())
                 Gap(8.dp)
                 Text("It goes on with the screen off. Karaoke comes in by itself when it's done.", color = Brand.Dim, style = MaterialTheme.typography.labelSmall)
                 Gap(8.dp)

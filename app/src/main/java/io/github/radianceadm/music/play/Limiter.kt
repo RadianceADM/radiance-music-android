@@ -22,14 +22,17 @@ class Limiter(private val channels: Int, rate: Int) {
     private val kRelease = 1f - exp(-1.0 / (RELEASE_S * rate)).toFloat()
     private val kGlide = 1f - exp(-1.0 / (GLIDE_S * rate)).toFloat()
 
-    /** [samples] (interleaved, [frames] of them) raised by [target] (gliding there) and limited, in place. */
-    fun process(samples: FloatArray, frames: Int, target: Float) {
+    /**
+     * [samples] (interleaved, [frames] of them) raised by [target] (gliding there) and limited, in place.
+     * [ceiling] 1: the song itself, untouched (as the desktop's, all of it up).
+     */
+    fun process(samples: FloatArray, frames: Int, target: Float, ceiling: Float = CEILING) {
         val goal = target.coerceIn(1f, MOST)
         for (f in 0 until frames) {
             makeup += (goal - makeup) * kGlide
             var peak = 0f
             for (c in 0 until channels) peak = maxOf(peak, abs(samples[f * channels + c] * makeup))
-            val wanted = if (peak > CEILING) CEILING / peak else 1f
+            val wanted = if (peak > ceiling) ceiling / peak else 1f
             released = minOf(wanted, released + (1f - released) * kRelease)
             while (held.isNotEmpty() && held.last().second >= released) held.removeLast()
             held.addLast(n to released)
@@ -53,7 +56,7 @@ class Limiter(private val channels: Int, rate: Int) {
 
     companion object {
         const val MOST = 2f // +6 dB
-        private const val CEILING = 0.97f
+        const val CEILING = 0.97f
         private const val LOOKAHEAD_S = 0.008
         private const val RELEASE_S = 0.25
         private const val GLIDE_S = 0.25

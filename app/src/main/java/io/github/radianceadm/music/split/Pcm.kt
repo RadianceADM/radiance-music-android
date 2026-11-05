@@ -113,9 +113,9 @@ object Pcm {
 
     /**
      * [src] at [rate] Hz (windowed sinc, Kaiser; 64 taps a side, so nothing
-     * audible is lost or folded back). The same file when it's at that rate.
+     * audible is lost or folded back), on [threads] cores. The same file when it's at that rate.
      */
-    fun resample(src: RawAudio, rate: Int, out: File, progress: (Float) -> Unit = {}): RawAudio {
+    fun resample(src: RawAudio, rate: Int, out: File, threads: Int = 1, progress: (Float) -> Unit = {}): RawAudio {
         if (src.rate == rate) return src
         val ratio = src.rate.toDouble() / rate
         val cutoff = minOf(1.0, rate.toDouble() / src.rate) * 0.96
@@ -127,40 +127,65 @@ object Pcm {
                 (cutoff * sinc(cutoff * d) * kaiser(d / half)).toFloat()
             }
         }
-        val x = src.map()
         val inFrames = src.frames
         val outFrames = floor(inFrames / ratio).toLong()
-        val bytes = ByteBuffer.allocate(BLOCK * 8).order(ByteOrder.LITTLE_ENDIAN)
+        // each core makes its own stretch of the output (every frame as one core would make it)
+        val n = threads.coerceIn(1, 16)
+        val per = (outFrames + n - 1) / n
+        val made = java.util.concurrent.atomic.AtomicLong(0)
+        val problem = java.util.concurrent.atomic.AtomicReference<Throwable?>(null)
         RandomAccessFile(out, "rw").use { raf ->
-            raf.setLength(0)
+            raf.setLength(outFrames * 8)
             val ch = raf.channel
-            var n = 0L
-            while (n < outFrames) {
-                bytes.clear()
-                val end = minOf(outFrames, n + BLOCK)
-                while (n < end) {
-                    val t = n * ratio
-                    val i0 = floor(t).toLong()
-                    val h = table[((t - i0) * PHASES).toInt()]
-                    var l = 0f
-                    var r = 0f
-                    val first = i0 - half + 1
-                    for (j in 0 until 2 * half) {
-                        val k = first + j
-                        if (k < 0 || k >= inFrames) continue
-                        val w = h[j]
-                        l += x.get((2 * k).toInt()) * w
-                        r += x.get((2 * k + 1).toInt()) * w
+            val workers = (0 until n).map { w ->
+                Thread({
+                    runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND) } // below the music
+                    try {
+                        val x = src.map()
+                        val bytes = ByteBuffer.allocate(BLOCK * 8).order(ByteOrder.LITTLE_ENDIAN)
+                        var i = w * per
+                        val stop = minOf(outFrames, i + per)
+                        while (i < stop && problem.get() == null) {
+                            bytes.clear()
+                            val first0 = i
+                            val end = minOf(stop, i + BLOCK)
+                            while (i < end) {
+                                val t = i * ratio
+                                val i0 = floor(t).toLong()
+                                val h = table[((t - i0) * PHASES).toInt()]
+                                var l = 0f
+                                var r = 0f
+                                val first = i0 - half + 1
+                                for (j in 0 until 2 * half) {
+                                    val k = first + j
+                                    if (k < 0 || k >= inFrames) continue
+                                    val wt = h[j]
+                                    l += x.get((2 * k).toInt()) * wt
+                                    r += x.get((2 * k + 1).toInt()) * wt
+                                }
+                                bytes.putFloat(l)
+                                bytes.putFloat(r)
+                                i++
+                            }
+                            bytes.flip()
+                            var at = first0 * 8
+                            while (bytes.hasRemaining()) at += ch.write(bytes, at)
+                            made.addAndGet(end - first0)
+                        }
+                    } catch (e: Throwable) {
+                        problem.compareAndSet(null, e)
                     }
-                    bytes.putFloat(l)
-                    bytes.putFloat(r)
-                    n++
-                }
-                bytes.flip()
-                while (bytes.hasRemaining()) ch.write(bytes)
-                progress(n.toFloat() / outFrames)
+                }, "radiance-resample-$w").also { it.start() }
             }
+            for (wk in workers) {
+                while (wk.isAlive) {
+                    wk.join(200)
+                    progress(made.get().toFloat() / maxOf(outFrames, 1))
+                }
+            }
+            problem.get()?.let { throw it }
         }
+        progress(1f)
         return RawAudio(out, rate, outFrames)
     }
 

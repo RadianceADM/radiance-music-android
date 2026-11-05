@@ -3,13 +3,26 @@
 ## 0.5.18
 
 - **Karaoke in one tap:** there's a mic button beside Lyrics on the song's screen, as in Apple
-  Music. Tap it and the singing goes; tap it again for the whole song. Press and slide it up
-  or down to keep a little of the singing. A song that isn't split yet is split first (about
+  Music. Tap it and the singing goes down; tap it again for the whole song. Like Apple Music,
+  a little of the singing stays so you can follow along. Press and slide the mic up or down for
+  more or less, all the way out if you like. A song that isn't split yet is split first (about
   15 seconds), and karaoke comes in by itself. Karaoke stays on from song to song, and the next
   song is split while this one plays, so it starts as karaoke too.
-- **No more jumps in karaoke:** the split song's sound now comes first on the phone, so it
-  doesn't skip while the phone is busy (splitting the next song, for one). Back to the whole
-  song, you hear the song itself again, as it is (lossless), not its parts added up.
+- **Smooth switching:** a split song now plays as one stream, the song itself and its parts
+  together, so turning karaoke on or off just glides the singing down or up in a third of a
+  second. Nothing stops, restarts or skips. The whole song is the song itself, as it is
+  (lossless), not its parts added up.
+- **No more jumps in karaoke:** karaoke no longer keeps snapping back in step every few seconds
+  (each snap was a tiny cut in the sound), and the split song's sound comes first on the phone,
+  so it doesn't skip while the phone is busy (splitting the next song, for one).
+- **Splitting starts sooner and shows it:** a song waiting to be split no longer waits for its
+  music video to download first, and reading the song before the split now uses all the cores
+  the split uses. The bar shows the download and the reading too, and keeps moving between
+  steps instead of sitting at 0%.
+- **Sharing songs closes when you're done:** closing the Share songs screen now stops a QR that
+  nobody is using, so it doesn't stay open in the background keeping the phone awake. Songs
+  already on their way keep going, and the notification has a Stop button (tap it to see the
+  share). A QR left unused closes by itself after a few minutes.
 - **A simpler Mixer:** one tap each for Whole song, Karaoke and Vocals only, plus the effects.
   The sliders for each part (Drums, Bass, Other, Vocals) are gone, for songs split on your
   computer or a server too.

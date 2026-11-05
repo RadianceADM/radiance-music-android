@@ -76,9 +76,12 @@ class PlayerHub(private val context: Context) {
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) = sync()
 
-        // a seek: the Mixer's parts go there too
+        // a seek, or the same song again (repeat one, or twice in a row): the Mixer's sound goes there too
         override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
-            if (reason == Player.DISCONTINUITY_REASON_SEEK && oldPosition.mediaItemIndex == newPosition.mediaItemIndex) App.instance.mixer.seeked(newPosition.positionMs)
+            if (reason != Player.DISCONTINUITY_REASON_SEEK && reason != Player.DISCONTINUITY_REASON_AUTO_TRANSITION) return
+            val same = oldPosition.mediaItemIndex == newPosition.mediaItemIndex ||
+                (oldPosition.mediaItem?.let { trackOf(it)?.key } ?: "?") == newPosition.mediaItem?.let { trackOf(it)?.key }
+            if (same) App.instance.mixer.seeked(newPosition.positionMs)
         }
     }
 

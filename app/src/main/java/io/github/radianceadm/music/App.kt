@@ -123,7 +123,8 @@ class App : Application(), SingletonImageLoader.Factory {
     private suspend fun saveOne(t: Track): Boolean = saving.withLock {
         val now = library.best(t)
         if (!library.isLiked(t.key)) return@withLock false
-        val done = runCatching { Saver.save(this, now) { _status.value = it } }
+        // the song is in the library as soon as it's here (a split waiting for it starts then, not after its video)
+        val done = runCatching { Saver.save(this, now, { _status.value = it }, { song -> library.update(song) }) }
             .onSuccess { saved ->
                 library.update(saved)
                 withContext(Dispatchers.Main) { player.refresh(saved) }

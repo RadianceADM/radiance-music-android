@@ -16,6 +16,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import io.github.radianceadm.music.App
+import io.github.radianceadm.music.data.Saver
 import io.github.radianceadm.music.R
 import io.github.radianceadm.music.model.Track
 import io.github.radianceadm.music.net.Errors
@@ -66,6 +67,7 @@ class Splits(private val app: App) {
     }
 
     fun waiting(key: String) = _queue.value.any { it.key == key }
+
 
     /** Splits [t] when its turn comes (saved first, if it isn't yet). */
     fun add(t: Track) {
@@ -153,13 +155,15 @@ class SplitService : Service() {
                 splits.stopAsked = false
                 var problem: String? = null
                 try {
-                    // a liked song still saving: wait for its file
+                    // a liked song still saving: wait for its file (its download is the first part of the bar)
                     var song = app.library.best(t)
-                    var waited = 0
-                    while (song.file == null && waited < 600 && !splits.stopAsked) {
-                        splits.report(t, Splitter.Step("Waiting for the song to save", 0f))
-                        Thread.sleep(1000)
-                        waited++
+                    val began = System.currentTimeMillis()
+                    var downloaded = false
+                    while (song.file == null && System.currentTimeMillis() - began < 600_000 && !splits.stopAsked) {
+                        downloaded = true
+                        val got = Saver.got.value?.takeIf { it.first == t.key }?.second
+                        splits.report(t, Splitter.Step(if (got != null) "Downloading the song" else "Waiting for the song to save", DOWNLOAD_SHARE * (got ?: 0f), next = DOWNLOAD_SHARE))
+                        Thread.sleep(250)
                         song = app.library.best(t)
                     }
                     if (song.file == null) fail("It isn't saved on this phone: like it to save it.")
@@ -171,7 +175,7 @@ class SplitService : Service() {
                             last = now
                             notes.notify(NOTE, note("Splitting “${t.title}”", listOfNotNull(step.what.takeIf { it != "Splitting" }, "${(step.done * 100).toInt()} %", step.secondsLeft?.let { left(it) }).joinToString(" · "), step.done))
                         }
-                    }, { splits.stopAsked })
+                    }, { splits.stopAsked }, if (downloaded) DOWNLOAD_SHARE else 0f)
                 } catch (e: Throwable) {
                     Log.e("radiance-split", "split failed", e)
                     problem = Errors.say(e, offline = false) // in plain words (the log has the rest)
@@ -192,5 +196,8 @@ class SplitService : Service() {
         private const val NOTE = 21
 
         fun left(s: Int) = if (s < 60) "under a minute left" else "about ${(s + 30) / 60} min left"
+
+        /** The song's download, when the split waited for it: this much of the bar. */
+        private const val DOWNLOAD_SHARE = 0.2f
     }
 }

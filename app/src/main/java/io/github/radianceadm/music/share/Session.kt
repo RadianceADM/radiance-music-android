@@ -52,7 +52,23 @@ class Session(private val app: App) {
     private var server: Wire.Server? = null
     private var group: Direct.Group? = null
     private var job: Job? = null
+    private var watch: Job? = null
     @Volatile private var stop = false
+    /** When songs last moved (or the QR went up). */
+    @Volatile private var active = 0L
+
+    /**
+     * The Share songs sheet closed (owner, 2026-11-06: "naka stuck lang syang naka open"): a QR
+     * nobody is using stops, so nothing is left open and keeping the phone awake. Songs on their
+     * way go on, in the notification (Stop is there).
+     */
+    fun left() {
+        when (_state.value) {
+            is State.Moving, is State.Connecting -> Unit
+            is State.Showing -> if (System.currentTimeMillis() - active > BUSY_MS) close()
+            else -> close()
+        }
+    }
 
     private fun name() = android.provider.Settings.Global.getString(app.contentResolver, "device_name") ?: android.os.Build.MODEL
 
@@ -72,6 +88,7 @@ class Session(private val app: App) {
         job = app.scope.launch {
             try {
                 val s = Wire.Server(mode, offer, store, null, PhoneShare.pace(app)) { p ->
+                    active = System.currentTimeMillis()
                     val now = _state.value
                     if (now is State.Showing) _state.value = now.copy(progress = p)
                     ShareService.update(app, if (mode == "get") "Sending songs" else "Receiving songs", p)
@@ -83,7 +100,19 @@ class Session(private val app: App) {
                 if (host == null && g == null) fail("This phone isn't on Wi-Fi, and couldn't make its own network.")
                 val ticket = Wire.Ticket(mode, host, s.port, s.key, name(), g?.name, g?.pass, g?.let { Direct.HOST })
                 _state.value = State.Showing(ticket, what, null)
+                active = System.currentTimeMillis()
                 ShareService.start(app)
+                // a QR left up with nobody taking songs closes by itself (sooner when its sheet is closed)
+                watch = app.scope.launch {
+                    while (server === s) {
+                        kotlinx.coroutines.delay(30_000)
+                        val idle = System.currentTimeMillis() - active
+                        if (server === s && _state.value is State.Showing && idle > if (app.shareOpen.value == null) IDLE_MS else IDLE_OPEN_MS) {
+                            Log.i(TAG, "the QR went unused for ${idle / 60_000} min: closed")
+                            withContext(Dispatchers.Main) { close() }
+                        }
+                    }
+                }
             } catch (e: Throwable) {
                 Log.e(TAG, "couldn't open a share", e)
                 _state.value = State.Failed(Errors.say(e, offline = false)) // (phone to phone: the internet doesn't matter)
@@ -151,13 +180,21 @@ class Session(private val app: App) {
 
     /** Lets go of everything (the QR stops working). */
     fun close(keepState: Boolean = false) {
+        watch?.cancel(); watch = null
         server?.close(); server = null
         group?.close(); group = null
         if (!keepState) { job?.cancel(); job = null; _state.value = State.Idle }
         ShareService.stop(app)
     }
 
-    companion object { const val TAG = "radiance-share" }
+    companion object {
+        const val TAG = "radiance-share"
+        /** Songs moved this recently: a share still going (the sheet closing doesn't stop it). */
+        private const val BUSY_MS = 20_000L
+        /** A QR unused this long closes: its sheet closed, or still open. */
+        private const val IDLE_MS = 5 * 60_000L
+        private const val IDLE_OPEN_MS = 30 * 60_000L
+    }
 }
 
 /** Keeps a share going with the screen off, with a notification showing how far along it is. */
@@ -174,6 +211,11 @@ class ShareService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NOTE, note(this, "Sharing songs", null), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        if (intent?.action == STOP) {
+            // Stop, from the notification
+            ContextCompat.getMainExecutor(this).execute { App.instance.share.cancel() }
+            return START_NOT_STICKY
+        }
         if (wake == null) wake = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "radiance:share").apply { acquire(3 * 60 * 60 * 1000L) }
         @Suppress("DEPRECATION")
         if (wifi == null) wifi = getSystemService(WifiManager::class.java).createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "radiance:share").apply { acquire() }
@@ -189,6 +231,9 @@ class ShareService : Service() {
     companion object {
         private const val CHANNEL = "share"
         private const val NOTE = 31
+        private const val STOP = "io.github.radianceadm.music.share.STOP"
+        /** The notification opens the Share songs sheet (to see it, or stop it). */
+        const val OPEN = "share"
         private var last = 0L
 
         fun start(c: Context) { runCatching { ContextCompat.startForegroundService(c, Intent(c, ShareService::class.java)) } }
@@ -205,7 +250,8 @@ class ShareService : Service() {
             .setSmallIcon(R.drawable.ic_notify)
             .setContentTitle(title)
             .setContentText(p?.let { describe(it) })
-            .setContentIntent(PendingIntent.getActivity(c, 2, Intent(c, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
+            .setContentIntent(PendingIntent.getActivity(c, 2, Intent(c, MainActivity::class.java).putExtra(OPEN, true), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
+            .addAction(R.drawable.ic_notify, "Stop", PendingIntent.getService(c, 3, Intent(c, ShareService::class.java).setAction(STOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
             .setOngoing(true).setSilent(true).setOnlyAlertOnce(true)
             .apply { if (p != null && p.totalBytes > 0) setProgress(1000, (p.bytes * 1000 / p.totalBytes).toInt(), false) }
             .build()
