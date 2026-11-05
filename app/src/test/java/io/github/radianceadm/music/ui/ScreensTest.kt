@@ -118,5 +118,11 @@ class ScreensTest {
     @Test fun feedbackLater() = feedback("feedback-6-later", filled, Step.Problem(Kind.LATER, "Too many tries just now. Try again in 2 minutes."), me = ana)
     @Test fun feedbackThanks() = feedback("feedback-7-thanks", Answers(), Step.Thanks(share = true))
     @Test fun feedbackThanksNoShare() = feedback("feedback-8-thanks-plain", Answers(), Step.Thanks(share = false))
+    // the strip under the story (#19): the part picked, the lines' part (not movable), still reading the song
+    private val loud = FloatArray(64) { i -> io.github.radianceadm.music.share.Loudness.bars(FloatArray(64) { j -> (0.3f + 0.7f * kotlin.math.abs(kotlin.math.sin(j / 5f))) * (if (j in 24..40) 1f else 0.6f) })[i] }
+    @Test fun clipStrip() = shot("clip-strip") { ClipStrip(loud, io.github.radianceadm.music.share.StoryVideo.Window(70_000, 22_000), 209_000, enabled = true, playing = true, onChange = {}, onTouch = { _, _ -> }, onHear = {}) }
+    @Test fun clipStripLines() = shot("clip-strip-lines") { ClipStrip(loud, io.github.radianceadm.music.share.StoryVideo.Window(70_000, 9_000), 209_000, enabled = false, playing = false, onChange = {}, onTouch = { _, _ -> }, onHear = {}) }
+    @Test fun clipStripReading() = shot("clip-strip-reading") { ClipStrip(null, io.github.radianceadm.music.share.StoryVideo.Window(1_000, 15_000), 209_000, enabled = true, playing = false, onChange = {}, onTouch = { _, _ -> }, onHear = {}) }
+    @Test fun shareWithSound() = shot("share-sound") { ShareScreen(Track(Source.YOUTUBE, "test", "Golden Hour", "JVKE", seconds = 209, file = "file:///nonexistent/golden-hour.m4a"), emptyList(), onClose = {}) }
     @Test fun share() = shot("share") { ShareScreen(Track(Source.YOUTUBE, "test", "Golden Hour", "JVKE", seconds = 209), emptyList(), onClose = {}) }
 }

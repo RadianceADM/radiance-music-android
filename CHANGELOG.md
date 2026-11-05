@@ -2,6 +2,10 @@
 
 ## 0.5.16
 
+- **Pick the part of the song for your story:** under the story there's now a strip of the song.
+  Drag the bright part to the part you want (it plays as you drag), and drag its ends to make it
+  from 6 to 30 seconds. Before, a story without lyrics always took 15 seconds from where the song
+  was playing. With timed lyric lines picked, the lines still set the part, and the strip shows it.
 - **"Are you enjoying Radiance Music?"** Now and then (after a week and 30 songs, at most once
   a month, never mid-song) the app asks for five quick star ratings and anything you'd like to
   say. Sending signs you in with Google in one tap; your name and email are kept with your

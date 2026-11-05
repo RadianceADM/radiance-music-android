@@ -53,6 +53,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -84,14 +85,19 @@ import io.github.radianceadm.music.net.Connectivity
 import io.github.radianceadm.music.net.Errors
 import io.github.radianceadm.music.share.Share
 import io.github.radianceadm.music.share.StoryCard
+import io.github.radianceadm.music.share.Loudness
 import io.github.radianceadm.music.share.StoryVideo
 import io.github.radianceadm.music.share.Targets
 import io.github.radianceadm.music.source.Lyrics
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/** The strip's bars under the story (#19): one for each stretch of the song. */
+private const val STRIP_BARS = 64
 
 /** A lyric line to pick: its words, and when it's sung (seconds; null for lyrics without timing). */
 internal data class Pick(val text: String, val start: Double?)
@@ -166,17 +172,52 @@ internal fun ShareScreen(t: Track, startLines: List<String>, onClose: () -> Unit
         if (!artLoaded) return@LaunchedEffect
         card = withContext(Dispatchers.Default) { StoryCard.draw(context, t, art, chosen, tone) }
     }
-    // the clip of the song the video takes: the picked lines as they're sung, else 15 s from where you are
+    // the clip of the song the video takes: the picked lines as they're sung, else the part picked
+    // on the strip under the story (#19), at first 15 s from where the song is
+    val songMs = t.seconds * 1000L
+    val hereMs = remember(t.key) { if (hub.current.value?.key == t.key) hub.position else (songMs * 0.3).toLong() }
+    var window by remember(t.key) { mutableStateOf(StoryVideo.Window.around(hereMs, songMs)) }
+    val timed = chosen.isNotEmpty() && order.all { lines.orEmpty().getOrNull(it)?.start != null }
     val clip = run {
         val all = lines.orEmpty()
-        val timed = chosen.isNotEmpty() && order.all { all.getOrNull(it)?.start != null }
-        val here = if (hub.current.value?.key == t.key) hub.position else (t.seconds * 1000L * 0.3).toLong()
-        StoryVideo.clip(
-            starts = if (timed) order.map { all[it].start!! } else null,
-            nextStart = if (timed) all.getOrNull(order.last() + 1)?.start else null,
-            fromMs = here,
-            songMs = t.seconds * 1000L,
-        )
+        when {
+            timed -> StoryVideo.clip(
+                starts = order.map { all[it].start!! },
+                nextStart = all.getOrNull(order.last() + 1)?.start,
+                fromMs = hereMs,
+                songMs = songMs,
+            )
+            songMs > 0 -> window.clip()
+            else -> StoryVideo.clip(starts = null, nextStart = null, fromMs = hereMs, songMs = songMs)
+        }
+    }
+    // the strip's bars (the song's loudness), and the part heard on its own player
+    val withSound = sound && song != null
+    var bars by remember(song) { mutableStateOf<FloatArray?>(null) }
+    LaunchedEffect(song, withSound) {
+        if (withSound && bars == null) bars = withContext(Dispatchers.Default) { Loudness.of(context, song, STRIP_BARS) }
+    }
+    val preview = remember(song) { song?.let { ClipPreview(context, it) } }
+    var hearing by remember { mutableStateOf(false) }
+    // the music that was playing, paused for the part (played again when this closes)
+    val pausedMain = remember { booleanArrayOf(false) }
+    val lastSeek = remember { longArrayOf(0L) }
+    var held by remember { mutableStateOf<StripTouch.Grab?>(null) }
+    val part = StoryVideo.Window(clip.startMs, clip.lengthMs)
+    fun hear(w: StoryVideo.Window, fromMs: Long = w.startMs) {
+        val p = preview ?: return
+        if (!pausedMain[0] && hub.playing.value) { hub.toggle(); pausedMain[0] = true }
+        p.play(w, fromMs)
+        hearing = true
+    }
+    fun quiet() { preview?.stop(); hearing = false }
+    LaunchedEffect(hearing) { while (hearing) { delay(100); if (preview?.tick() != true && held == null) hearing = false } }
+    LaunchedEffect(withSound) { if (!withSound) quiet() }
+    DisposableEffect(preview) {
+        onDispose {
+            preview?.release()
+            if (pausedMain[0]) { pausedMain[0] = false; hub.toggle() }
+        }
     }
     val mime = if (sound && song != null) "video/mp4" else "image/jpeg"
     val targets = remember(mime) { Targets.available(context, mime) }
@@ -241,6 +282,33 @@ internal fun ShareScreen(t: Track, startLines: List<String>, onClose: () -> Unit
                         }
                     }
                 }
+            }
+            // which part of the song (#19): only for a story with sound, of a song whose length is known
+            if (withSound && songMs > 0) {
+                ClipStrip(
+                    bars = bars,
+                    window = part,
+                    songMs = songMs,
+                    enabled = !timed,
+                    playing = hearing,
+                    onChange = { w ->
+                        window = w
+                        val grab = held
+                        if (grab != null && preview != null) {
+                            preview.follow(w)
+                            val now = android.os.SystemClock.uptimeMillis()
+                            // the part plays as it's dragged (an end: the 3 s before it)
+                            if (now - lastSeek[0] > 300) { lastSeek[0] = now; hear(w, if (grab == StripTouch.Grab.END) w.endMs - 3_000 else w.startMs) }
+                        }
+                    },
+                    onTouch = { down, grab ->
+                        held = if (down) grab else null
+                        if (down) hear(window, if (grab == StripTouch.Grab.END) window.endMs - 3_000 else window.startMs)
+                        else hear(window)
+                    },
+                    onHear = { if (hearing) quiet() else hear(part) },
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
             }
             // Cover or Lyrics, and the sound
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {

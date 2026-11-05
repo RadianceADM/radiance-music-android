@@ -50,6 +50,42 @@ object StoryVideo {
     data class Clip(val startMs: Long, val lengthMs: Long, val lineAtMs: List<Long>)
 
     /**
+     * The part of the song picked on the strip under the story, when no timed lines set it
+     * (owner, 2026-11-05, #19: "i cannot select the timings or part of the song to share"):
+     * moved along the song, and made shorter or longer by its ends, [LEAST_MS] to [MOST_MS].
+     */
+    data class Window(val startMs: Long, val lengthMs: Long) {
+        val endMs get() = startMs + lengthMs
+
+        fun clip() = Clip(startMs, lengthMs, emptyList())
+
+        /** Its start at [toMs], as long as it is, inside the song. */
+        fun moved(toMs: Long, songMs: Long) = Window(toMs.coerceIn(0, (songMs - lengthMs).coerceAtLeast(0)), lengthMs)
+
+        /** Its start handle at [toMs]: the end stays. */
+        fun startAt(toMs: Long, songMs: Long): Window {
+            val end = endMs.coerceAtMost(songMs)
+            val length = (end - toMs.coerceAtLeast(0)).coerceIn(LEAST_MS.coerceAtMost(end), MOST_MS)
+            return Window(end - length, length)
+        }
+
+        /** Its end handle at [toMs]: the start stays. */
+        fun endAt(toMs: Long, songMs: Long): Window {
+            val room = songMs - startMs
+            val length = (toMs.coerceAtMost(songMs) - startMs).coerceIn(LEAST_MS.coerceAtMost(room), MOST_MS.coerceAtMost(room))
+            return Window(startMs, length)
+        }
+
+        companion object {
+            /** Before anything's picked: [PLAIN_MS] from where the song is, as the clip always was. */
+            fun around(fromMs: Long, songMs: Long): Window {
+                val length = PLAIN_MS.coerceAtMost(songMs)
+                return Window(fromMs.coerceIn(0, songMs - length), length)
+            }
+        }
+    }
+
+    /**
      * The clip for [picked] lines sung at [starts] (seconds, with [nextStart] the
      * line after the last one), or [fromMs] for a [PLAIN_MS] clip when the lines
      * aren't timed. [songMs]: the song's length, if known.
