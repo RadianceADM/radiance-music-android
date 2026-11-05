@@ -150,6 +150,7 @@ class PartsEngine(files: Map<String, File>, gains: Map<String, Float>) {
 
     private val parts = files.map { (name, f) -> Part(name, f, gains[name] ?: 1f) }
     private val lock = Object()
+    @Volatile private var fadeTo = 1f
     @Volatile private var running = true
     @Volatile private var playing = false
     @Volatile private var seekMs = -1L
@@ -164,6 +165,12 @@ class PartsEngine(files: Map<String, File>, gains: Map<String, Float>) {
         seekMs = atMs
         thread.start()
     }
+
+    /** Out to silence (a quarter second, as it came in): the song itself comes back meanwhile. */
+    fun fadeOut() { fadeTo = 0f }
+
+    /** How far ahead of what's heard it writes (its buffer), in ms: what's mixed now is heard this much later. */
+    fun aheadMs(): Long = track?.let { it.bufferSizeInFrames * 1000L / rate } ?: 0L
 
     fun setGain(name: String, g: Float) {
         parts.firstOrNull { it.name == name }?.gain = g.coerceIn(0f, 1f)
@@ -200,6 +207,9 @@ class PartsEngine(files: Map<String, File>, gains: Map<String, Float>) {
     }
 
     private fun loop() {
+        // as the player's own: sound first, so a split or a busy screen never leaves a gap (owner,
+        // 2026-11-05: "may tumatalon": at normal priority the parts ran dry and were put back in step)
+        android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO)
         val info = MediaCodec.BufferInfo()
         val n = CHUNK * 2
         val mix = FloatArray(n)
@@ -207,6 +217,7 @@ class PartsEngine(files: Map<String, File>, gains: Map<String, Float>) {
         var limiter: Limiter? = null
         var effects: EffectsChain? = null
         var fade = 0f // in after each start or seek, over FADE_S
+        var underruns = 0
         try {
             while (running) {
                 val to = seekMs
@@ -261,16 +272,21 @@ class PartsEngine(files: Map<String, File>, gains: Map<String, Float>) {
                 }
                 limiter?.process(mix, CHUNK, Limiter.makeup(parts.map { it.power to it.gain }))
                 effects?.process(mix, CHUNK) // Low cut, High cut, Reverb (as the player's)
-                if (fade < 1f) {
+                // in at the start, out when the whole song goes back to the song itself (fadeOut)
+                val goal = fadeTo
+                if (fade != goal || goal < 1f) {
                     val step = 1f / (FADE_S * rate).toFloat()
                     for (f in 0 until CHUNK) {
-                        fade = minOf(1f, fade + step)
+                        fade = if (goal > fade) minOf(goal, fade + step) else maxOf(goal, fade - step)
                         mix[2 * f] *= fade
                         mix[2 * f + 1] *= fade
                     }
                 }
                 if (t.playState != AudioTrack.PLAYSTATE_PLAYING) t.play()
                 t.write(mix, 0, n, AudioTrack.WRITE_BLOCKING)
+                // the phone too busy to keep up: a gap was heard (in the log, to find why)
+                val under = t.underrunCount
+                if (under > underruns) { android.util.Log.w("radiance-mix", "the parts ran dry ($under times)"); underruns = under }
             }
         } finally {
             track?.run {

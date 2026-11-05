@@ -1,6 +1,7 @@
 package io.github.radianceadm.music.play
 
 import android.content.Context
+import android.util.Log
 import io.github.radianceadm.music.App
 import io.github.radianceadm.music.data.Import
 import io.github.radianceadm.music.model.Track
@@ -126,6 +127,28 @@ class Mixer(private val app: App) {
             Voice.VocalsOnly -> 1f to 0f
         }
         for (p in (PARTS + HALVES).distinct()) set(p, if (p == "vocals") vocals else rest)
+        // all of it again: the song itself, as it is (lossless, not its parts added up)
+        if (allUp()) leave()
+    }
+
+    /** The parts out and the song itself back in, crossfaded, as engage() does the other way. */
+    private fun leave() {
+        val e = engine ?: return
+        watch?.cancel()
+        watch = null
+        engine = null
+        val hub = app.player
+        Log.i(TAG, "the song itself again at ${hub.position} ms")
+        e.fadeOut()
+        scope.launch {
+            delay(e.aheadMs()) // the parts' fade is heard this much later
+            for (i in 1..10) {
+                if (engine != null) break // karaoke again meanwhile: that one has the song's volume now
+                hub.setVolume(i / 10f)
+                delay(25)
+            }
+            Thread { e.release() }.start()
+        }
     }
 
     fun playingChanged(on: Boolean) = engine?.setPlaying(on)
@@ -142,6 +165,7 @@ class Mixer(private val app: App) {
         val other = _gains.value["other"] ?: 1f
         val e = runCatching { PartsEngine(names.associateWith { files.getValue(it) }, _gains.value + EXTRAS.associateWith { other }) }.getOrNull() ?: return
         engine = e
+        Log.i(TAG, "parts in (${names.joinToString()}) at ${hub.position} ms")
         // the parts start where the song will be once they're ready (onward, never back)
         e.start(hub.position + START_LEAD_MS, hub.playing.value)
         scope.launch {
@@ -157,7 +181,11 @@ class Mixer(private val app: App) {
                 delay(1000)
                 if (engine !== e || !hub.playing.value) continue
                 // kept in step with the player (it's what the lock screen and seeking follow)
-                if (abs(hub.position - e.positionMs()) > DRIFT_MS) e.seek(hub.position + START_LEAD_MS)
+                val off = hub.position - e.positionMs()
+                if (abs(off) > DRIFT_MS) {
+                    Log.w(TAG, "parts off the song by $off ms at ${hub.position} ms: put back in step")
+                    e.seek(hub.position + START_LEAD_MS)
+                }
             }
         }
     }
@@ -176,6 +204,7 @@ class Mixer(private val app: App) {
         val HALVES = listOf("music", "vocals")
         /** A song split in six also has these (the rest of Other). */
         val EXTRAS = listOf("guitar", "piano")
+        private const val TAG = "radiance-mix"
         private const val START_LEAD_MS = 150L
         private const val DRIFT_MS = 150L
     }

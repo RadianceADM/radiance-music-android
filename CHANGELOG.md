@@ -7,6 +7,9 @@
   or down to keep a little of the singing. A song that isn't split yet is split first (about
   15 seconds), and karaoke comes in by itself. Karaoke stays on from song to song, and the next
   song is split while this one plays, so it starts as karaoke too.
+- **No more jumps in karaoke:** the split song's sound now comes first on the phone, so it
+  doesn't skip while the phone is busy (splitting the next song, for one). Back to the whole
+  song, you hear the song itself again, as it is (lossless), not its parts added up.
 - **A simpler Mixer:** one tap each for Whole song, Karaoke and Vocals only, plus the effects.
   The sliders for each part (Drums, Bass, Other, Vocals) are gone, for songs split on your
   computer or a server too.
