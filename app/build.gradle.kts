@@ -13,8 +13,8 @@ android {
         applicationId = "io.github.radianceadm.music"
         minSdk = 29 // Android 10: saving into Music/ needs no storage permission
         targetSdk = 36
-        versionCode = 25
-        versionName = "0.5.16"
+        versionCode = 26
+        versionName = "0.5.17"
         // 64-bit Arm only: every phone that can split a song (the splitter needs a few GB of memory)
         ndk { abiFilters += listOf("arm64-v8a") }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -39,7 +39,7 @@ android {
         unitTests.isIncludeAndroidResources = true
         // the splitter's model isn't in the app (it downloads on the phone's first open, split/Model.kt);
         // the tests that run it use a copy kept in Gradle's own folder, where there is one (skipped where not)
-        unitTests.all { it.systemProperty("radiance.model", File(gradle.gradleUserHomeDir, "radiance/htdemucs_fp16weights.onnx").path) }
+        unitTests.all { it.systemProperty("radiance.spleeter", File(gradle.gradleUserHomeDir, "radiance/spleeter").path) }
     }
     buildTypes {
         // a test build: beside the real app (its own name), so a phone's device tests never touch it

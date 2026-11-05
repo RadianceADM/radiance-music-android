@@ -51,7 +51,7 @@ object ServerSongs {
                 // the server's lyrics (with each word's time) are kept first, so they're the ones saved
                 if (!Saver.lyricsFile(app, t).exists()) lyricsText(song)?.let { text -> into(Saver.lyricsFile(app, t)) { it.write(text.toByteArray()) } }
                 // its parts, as if split here: the Mixer plays them, Share Songs sends them on
-                if (song.split && !Splitter.isSplit(app, t.key)) {
+                if (song.split && !Splitter.parts(app, t.key).keys.containsAll(Splitter.FOUR)) {
                     // fetched for the Mixer already: copied from there, not downloaded again
                     val fetched = parts(app, t)
                     for (part in Mixer.PARTS) {

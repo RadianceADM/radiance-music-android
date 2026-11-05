@@ -70,7 +70,7 @@ object Guide {
     val CARDS = listOf(
         Card(Icons.Rounded.Search, "Search any song", "Type a song or an artist. Lossless plays first when there is one; YouTube Music has the rest."),
         Card(Icons.Rounded.Favorite, "Like it, it's yours", "Tap the heart. The song, its cover, its lyrics and its music video are saved on your phone and play with no internet."),
-        Card(Icons.AutoMirrored.Rounded.CallSplit, "Split it, mix it", "In Now Playing, open the Mixer and split a liked song into drums, bass, other and vocals, right on your phone. No vocals makes it karaoke."),
+        Card(Icons.AutoMirrored.Rounded.CallSplit, "Split it, mix it", "In Now Playing, open the Mixer and split a liked song into its vocals and its music, right on your phone, in seconds. No vocals makes it karaoke."),
         Card(Icons.Rounded.IosShare, "Put it on your story", "Tap Share: the cover, or up to 150 characters of lyrics. With sound, your story plays the song itself."),
         Card(Icons.Rounded.SwipeLeft, "Swipe, send, update", "Swipe the cover for the next or previous song. Send songs to another phone by QR, and get updates, in Settings."),
     )

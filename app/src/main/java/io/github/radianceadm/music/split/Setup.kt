@@ -21,8 +21,8 @@ import kotlinx.coroutines.launch
 import java.io.IOException
 
 /**
- * Getting the splitter ready, the first time the app opens: its model
- * downloads by itself, nothing to press, while the start screen shows how far
+ * Getting the splitter ready, the first time the app opens: its models
+ * download by themselves, nothing to press, while the start screen shows how far
  * along it is (owner: "if the pre-reqs are not yet there stay in the loading
  * screen with progress"). Offline or stopped, the start screen says why, with
  * Try again and Open Radiance Music now; it goes on by itself once the phone's
@@ -59,7 +59,8 @@ object Setup {
     @Synchronized
     fun check(context: Context) {
         if (job?.isActive == true) return
-        _state.value = if (Model.due(context)) State.Getting(Model.partOf(Model.file(context)).length()) else State.Ready
+        Model.forgetOld(context)
+        _state.value = if (Model.due(context)) State.Getting(Model.have(context)) else State.Ready
     }
 
     /** The app opens: the setup starts (or goes on) if the model isn't here yet. */
@@ -70,7 +71,7 @@ object Setup {
             return
         }
         if (job?.isActive == true) return
-        _state.value = State.Getting(Model.partOf(Model.file(app)).length())
+        _state.value = State.Getting(Model.have(app))
         job = app.scope.launch { run(app) }
     }
 
@@ -89,11 +90,10 @@ object Setup {
     fun waiting() = _state.value != State.Ready && !_later.value
 
     private suspend fun run(app: App) {
-        val file = Model.file(app)
         var tries = 0
         while (true) {
             val got = runCatching {
-                Model.get(file, progress = { _state.value = State.Getting(it) }, checking = { _state.value = State.Checking })
+                Model.getAll(app, progress = { _state.value = State.Getting(it) }, checking = { _state.value = State.Checking })
             }
             if (got.isSuccess) break
             val e = got.exceptionOrNull()!!
@@ -110,9 +110,9 @@ object Setup {
             // then Try again, or (a connection problem) the phone being online again
             val back = if (connection) Connectivity.online.dropWhile { it }.filter { it }.map { } else emptyFlow()
             merge(again.receiveAsFlow(), back).first()
-            _state.value = State.Getting(Model.partOf(file).length())
+            _state.value = State.Getting(Model.have(app))
         }
-        Log.i(TAG, "the splitter's model is here")
+        Log.i(TAG, "the splitter's models are here")
         _state.value = State.Ready
         app.splits.start() // songs waiting to be split go on
     }

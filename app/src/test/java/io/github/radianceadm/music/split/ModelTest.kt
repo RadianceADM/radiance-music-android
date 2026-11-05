@@ -91,25 +91,37 @@ class ModelTest {
 
     private fun get(file: File, client: OkHttpClient, progress: (Long) -> Unit = {}) = Model.get(file, url, size, sha, client, progress)
 
-    @Test fun missingModelMeansSetupIsDue() {
+    @Test fun missingModelsMeanSetupIsDue() {
         val context = RuntimeEnvironment.getApplication()
-        val file = Model.file(context)
-        file.delete()
+        val files = Model.FILES.map { Model.file(context, it) to it.size }
+        files.forEach { (f, _) -> f.delete(); Model.partOf(f).delete() }
         assertTrue(Model.due(context))
         Setup.check(context)
         assertTrue(Setup.state.value is Setup.State.Getting)
-        // half a download isn't the model either
-        file.parentFile!!.mkdirs()
-        RandomAccessFile(file, "rw").use { it.setLength(Model.SIZE / 2) }
+        // one whole, the other half downloaded: still due, and what's here counts toward the progress
+        files[0].first.parentFile!!.mkdirs()
+        RandomAccessFile(files[0].first, "rw").use { it.setLength(files[0].second) }
+        RandomAccessFile(Model.partOf(files[1].first), "rw").use { it.setLength(files[1].second / 2) }
         assertTrue(Model.due(context))
-        // whole (only ever put there checked): ready, nothing to download
-        RandomAccessFile(file, "rw").use { it.setLength(Model.SIZE) }
+        assertEquals(files[0].second + files[1].second / 2, Model.have(context))
+        // both whole (only ever put there checked): ready, nothing to download
+        Model.partOf(files[1].first).delete()
+        RandomAccessFile(files[1].first, "rw").use { it.setLength(files[1].second) }
         assertFalse(Model.due(context))
+        assertEquals(Model.SIZE, Model.have(context))
         Setup.check(context)
         assertEquals(Setup.State.Ready, Setup.state.value)
-        file.delete()
+        files[1].first.delete()
         Setup.check(context)
         assertTrue(Setup.state.value is Setup.State.Getting)
+        files.forEach { (f, _) -> f.delete() }
+    }
+
+    @Test fun theOldSplitterIsDeleted() {
+        val context = RuntimeEnvironment.getApplication()
+        val old = File(Model.dir(context), "htdemucs_fp16weights.onnx").apply { parentFile!!.mkdirs(); writeBytes(ByteArray(16)) }
+        Setup.check(context)
+        assertFalse(old.exists())
     }
 
     @Test fun downloadsChecksAndPutsInPlace() {

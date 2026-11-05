@@ -75,7 +75,11 @@ class ScreensTest {
         LyricPicker(lines, picked, Color(0xFF5C2A12), withSound = true, onDone = {})
     }
     @Test fun guide() = shot("guide") { GuideScreen(onDone = {}) }
-    @Test fun mixer() = shot("mixer") { MixerSheet(Track(Source.YOUTUBE, "test", "Golden Hour", "JVKE", seconds = 209), mixable = true, onDone = {}) }
+    @Test fun mixer() = shot("mixer") { MixerSheet(Track(Source.YOUTUBE, "test", "Golden Hour", "JVKE", seconds = 209), mixable = true, onDone = {}, parts = io.github.radianceadm.music.play.Mixer.PARTS) }
+    // a song split on the phone (#43): its two halves
+    @Test fun mixerHalves() = shot("mixer-halves") { MixerSheet(Track(Source.YOUTUBE, "test", "Golden Hour", "JVKE", seconds = 209), mixable = true, onDone = {}, parts = io.github.radianceadm.music.play.Mixer.HALVES) }
+    // not split yet: the split panel's words
+    @Test fun mixerSplit() = shot("mixer-split") { MixerSheet(Track(Source.YOUTUBE, "test", "Golden Hour", "JVKE", seconds = 209), mixable = false, onDone = {}) }
 
     // the update pop-up, each step (owner, 2026-10-31: a modal when an update is out, with Remind me later)
     private val release = io.github.radianceadm.music.update.Updates.Release(

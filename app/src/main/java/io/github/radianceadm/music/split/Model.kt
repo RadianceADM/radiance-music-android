@@ -9,27 +9,60 @@ import java.net.SocketException
 import java.security.MessageDigest
 
 /**
- * The splitter's model: Demucs (MIT) exported to ONNX by StemSplitio (MIT),
- * weights stored as fp16. Not inside the app (that made it 208 MB): it's
- * downloaded the first time the app opens (owner, 2026-10-31: "download on
- * first open ng app" / "setup"), checked to be exactly the published file, and
- * kept in the app's own files. That file is the one place it lives.
+ * The splitter's models: Spleeter's two (vocals and accompaniment; Deezer,
+ * MIT) as ONNX, exported by sherpa-onnx (Apache 2.0), weights stored as fp16,
+ * 19.7 MB each. Not inside the app: downloaded the first time the app opens
+ * (owner, 2026-10-31: "download on first open ng app" / "setup"), each checked
+ * to be exactly the published file, and kept in the app's own files. Pinned to
+ * one commit of the Hugging Face copy, so the files can't change under us.
+ * Until 0.5.16 it was Demucs (166 MB, four parts); that file is deleted.
  */
 object Model {
-    const val URL = "https://huggingface.co/StemSplitio/htdemucs-onnx/resolve/main/htdemucs_fp16weights.onnx"
-    const val SIZE = 165_612_636L
-    const val SHA256 = "d05c269d0178d2a72ad484b10b11dd370193fc923201c3b27a99f848745db70a"
-    private const val NAME = "htdemucs_fp16weights.onnx"
+    /** One of the files: its name here, where it comes from, its size and SHA-256. */
+    data class Part(val name: String, val url: String, val size: Long, val sha256: String)
 
-    /** The model, whole and checked (only ever put here after its check). */
-    fun file(context: Context) = File(File(context.filesDir, "splitter"), NAME)
+    private const val REPO = "https://huggingface.co/csukuangfj/sherpa-onnx-spleeter-2stems-fp16/resolve/93ba771920ade509f8cbd6825b1a90856c797e08"
+    val VOCALS = Part("vocals.fp16.onnx", "$REPO/vocals.fp16.onnx", 19_681_017L, "24cef84aedcd1fe87c0b743ef3370ad34dc1fabf6c9014d6128a75a538c7b668")
+    val MUSIC = Part("accompaniment.fp16.onnx", "$REPO/accompaniment.fp16.onnx", 19_681_024L, "d14cea55793cc531a5875f5f4da08207d1c5ab9292e8e0099a104eecb014fcc0")
+    val FILES = listOf(VOCALS, MUSIC)
+    /** Both together, as the setup shows it. */
+    val SIZE = FILES.sumOf { it.size }
 
-    /** The setup is due: the model isn't here yet. */
-    fun due(context: Context) = due(file(context))
-    fun due(file: File, size: Long = SIZE) = file.length() != size
+    /** The old splitter's file (Demucs, until 0.5.16). */
+    private const val OLD = "htdemucs_fp16weights.onnx"
+
+    fun dir(context: Context) = File(context.filesDir, "splitter")
+
+    /** One of the files, whole and checked (only ever put here after its check). */
+    fun file(context: Context, part: Part) = File(dir(context), part.name)
+
+    /** The setup is due: a file isn't here yet. */
+    fun due(context: Context) = FILES.any { due(file(context, it), it.size) }
+    fun due(file: File, size: Long) = file.length() != size
+
+    /** How much is here so far (whole files and what downloads left), for the setup's progress. */
+    fun have(context: Context): Long = FILES.sumOf { p ->
+        val f = file(context, p)
+        if (!due(f, p.size)) p.size else partOf(f).length().coerceAtMost(p.size)
+    }
 
     /** Where it downloads to, going on from there after a stop. */
     fun partOf(file: File) = File(file.path + ".part")
+
+    /** The old splitter's file goes (166 MB back on the phone). */
+    fun forgetOld(context: Context) {
+        File(dir(context), OLD).delete()
+        partOf(File(dir(context), OLD)).delete()
+    }
+
+    /** Gets both files in turn ([get]); [progress]: bytes so far of [SIZE]. */
+    fun getAll(context: Context, client: OkHttpClient = Http.client, progress: (Long) -> Unit = {}, checking: () -> Unit = {}) {
+        var before = 0L
+        for (p in FILES) {
+            get(file(context, p), p.url, p.size, p.sha256, client, { progress(before + it) }, checking)
+            before += p.size
+        }
+    }
 
     /**
      * Gets the model into [file]: downloads it into a .part beside it (going
@@ -40,9 +73,9 @@ object Model {
      */
     fun get(
         file: File,
-        url: String = URL,
-        size: Long = SIZE,
-        sha256: String = SHA256,
+        url: String,
+        size: Long,
+        sha256: String,
         client: OkHttpClient = Http.client,
         progress: (Long) -> Unit = {},
         checking: () -> Unit = {},

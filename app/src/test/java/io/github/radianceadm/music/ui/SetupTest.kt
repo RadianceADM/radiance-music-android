@@ -51,10 +51,10 @@ class SetupTest {
     @Test fun downloading() {
         var done = false
         rule.mainClock.autoAdvance = false
-        rule.setContent { RadianceTheme { StartSplash(setup = Setup.State.Getting(72_400_000), onDone = { done = true }) } }
+        rule.setContent { RadianceTheme { StartSplash(setup = Setup.State.Getting(17_400_000), onDone = { done = true }) } }
         rule.mainClock.advanceTimeBy(1_600) // the sun up, its bars playing
-        rule.onNodeWithText("Getting Radiance Music ready: downloading the splitter (165 MB)…").assertExists()
-        rule.onNodeWithText("72 MB of 165 MB").assertExists()
+        rule.onNodeWithText("Getting Radiance Music ready: downloading the splitter (39 MB)…").assertExists()
+        rule.onNodeWithText("17 MB of 39 MB").assertExists()
         rule.onNodeWithText("Try again").assertDoesNotExist() // nothing to press while it downloads
         save("setup-1-downloading")
         // it stays on the icon while the setup goes on (long past when the splash would have gone)

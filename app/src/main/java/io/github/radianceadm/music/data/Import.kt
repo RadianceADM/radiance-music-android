@@ -32,7 +32,7 @@ object Import {
     /** The song's parts, split on this phone or copied: name ("drums", "bass", "other", "vocals", "music") to its file. */
     fun parts(context: Context, key: String): Map<String, File> {
         // split on this phone
-        Splitter.parts(context, key).takeIf { it.size == Splitter.PARTS.size }?.let { return it }
+        Splitter.parts(context, key).takeIf { it.keys.containsAll(Splitter.PARTS) || it.keys.containsAll(Splitter.FOUR) }?.let { return it }
         val songs = runCatching { JSONObject(list(context).readText()).getJSONArray("songs") }.getOrNull() ?: return emptyMap()
         for (i in 0 until songs.length()) {
             val e = songs.getJSONObject(i)

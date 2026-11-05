@@ -497,7 +497,7 @@ private fun LyricsIcon(on: Boolean) {
  * A song from a server you joined is split there (when its owner lets you), and its parts come from there.
  */
 @Composable
-internal fun MixerSheet(t: Track, mixable: Boolean, onDone: () -> Unit) {
+internal fun MixerSheet(t: Track, mixable: Boolean, parts: List<String>? = null, onDone: () -> Unit) {
     val mixer = App.instance.mixer
     val gains by mixer.gains.collectAsState()
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 22.dp, end = 22.dp, top = 18.dp, bottom = 28.dp)) {
@@ -508,7 +508,7 @@ internal fun MixerSheet(t: Track, mixable: Boolean, onDone: () -> Unit) {
         if (mixable) {
             Text("Each part as loud as you like. Turning one down keeps the song as loud as it was whole.", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
             Gap(12.dp)
-            PartSliders(gains)
+            PartSliders(gains, parts)
         } else if (Servers.of(t) != null) {
             ServerSplitPanel(t) { SplitPanel(t) }
         } else {
@@ -543,10 +543,15 @@ private fun MixSlider(value: Float, onValueChange: (Float) -> Unit, modifier: Mo
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun PartSliders(gains: Map<String, Float>) {
+private fun PartSliders(gains: Map<String, Float>, parts: List<String>?) {
     val mixer = App.instance.mixer
+    val playing by mixer.shown.collectAsState()
+    val shown = parts ?: playing
+    val labels = mapOf("drums" to "Drums", "bass" to "Bass", "other" to "Other", "music" to "Music", "vocals" to "Vocals")
     Column {
-        for ((name, label) in listOf("drums" to "Drums", "bass" to "Bass", "other" to "Other", "vocals" to "Vocals")) {
+        // the song's two halves (split on this phone) or its four parts (split on the computer or a server)
+        for (name in shown) {
+            val label = labels[name] ?: name.replaceFirstChar { it.uppercase() }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(label, color = Color.White, modifier = Modifier.width(72.dp))
                 MixSlider(value = gains[name] ?: 1f, onValueChange = { mixer.set(name, it) }, modifier = Modifier.weight(1f))
@@ -603,7 +608,7 @@ private fun SplitPanel(t: Track) {
             }
             setup != Setup.State.Ready -> SplitterNotReady(setup)
             else -> {
-                Text("Split this song into drums, bass, other and vocals, here on this phone, to mix them.", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
+                Text("Split this song into its vocals and its music, here on this phone: No vocals makes it karaoke, Vocals only keeps just the singing.", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
                 if (t.file == null) Text("It's liked and saved first.", color = Brand.Dim, style = MaterialTheme.typography.labelSmall)
                 Gap(8.dp)
                 Button(onClick = {

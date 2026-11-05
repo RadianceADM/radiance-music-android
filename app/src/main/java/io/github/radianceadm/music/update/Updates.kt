@@ -78,7 +78,8 @@ object Updates {
     val state: StateFlow<State> = _state
     private var job: Job? = null
 
-    fun current(context: Context): String = info(context).versionName.orEmpty()
+    /** This app's version ("" where the system can't say, e.g. in the screen tests: never throws, it runs in the background). */
+    fun current(context: Context): String = runCatching { info(context).versionName }.getOrNull().orEmpty()
 
     /** At start: a new look every time (what the last look found only when this one can't be
      *  done, offline). Offering the last look's at once, and looking only every 6 hours, offered a

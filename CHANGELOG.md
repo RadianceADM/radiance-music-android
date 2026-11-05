@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.17
+
+- **Splitting is about 20 times faster:** a song now splits in two, its vocals and its music,
+  in seconds instead of minutes (about 10 to 20 seconds for a 4-minute song on a recent phone).
+  The Mixer then has Music and Vocals: No vocals makes it karaoke, Vocals only keeps just the
+  singing. It uses Deezer's Spleeter instead of Demucs. Songs with four parts (split on your
+  computer, on a server, or on the phone before) keep their Drums, Bass, Other and Vocals.
+- **A smaller splitter:** it downloads once at the first open, 39 MB instead of 166 MB, and the
+  old one is deleted from your phone (166 MB back).
+
 ## 0.5.16
 
 - **Pick the part of the song for your story:** under the story there's now a strip of the song.

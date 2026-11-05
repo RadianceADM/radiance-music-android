@@ -131,7 +131,8 @@ fun AboutScreen(onClose: () -> Unit) {
                 Credits(listOf(
                     "NewPipe Extractor" to "https://github.com/TeamNewPipe/NewPipeExtractor",
                     "Media3" to "https://developer.android.com/media/media3",
-                    "Demucs" to "https://github.com/facebookresearch/demucs",
+                    "Spleeter (Deezer)" to "https://github.com/deezer/spleeter",
+                    "sherpa-onnx" to "https://github.com/k2-fsa/sherpa-onnx",
                     "ONNX Runtime" to "https://onnxruntime.ai",
                     "OkHttp" to "https://square.github.io/okhttp",
                     "Coil" to "https://coil-kt.github.io/coil",

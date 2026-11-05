@@ -16,8 +16,10 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 /**
- * The Mixer: a split song's four parts, each as loud as you like (a song
- * split in six on the computer also plays its Piano and Guitar, with Other). The player
+ * The Mixer: a split song's parts, each as loud as you like: its two halves
+ * (Music, Vocals: how the phone splits since 0.5.17, #43) or its four parts
+ * (split on the computer or a server; a song split in six on the computer also
+ * plays its Piano and Guitar, with Other). Four win when a song has both. The player
  * keeps playing the song itself, silently, and drives everything (the lock
  * screen, Bluetooth buttons, seeking, the next song); the parts follow it,
  * mixed by PartsEngine. Your mix stays from song to song. A song from a
@@ -25,8 +27,12 @@ import kotlin.math.abs
  * (ServerSongs), the same way.
  */
 class Mixer(private val app: App) {
-    private val _gains = MutableStateFlow(PARTS.associateWith { 1f })
+    private val _gains = MutableStateFlow((PARTS + HALVES).distinct().associateWith { 1f })
     val gains: StateFlow<Map<String, Float>> = _gains
+
+    /** The sliders the song playing has: [PARTS] or [HALVES] (empty: not split). */
+    private val _shown = MutableStateFlow<List<String>>(emptyList())
+    val shown: StateFlow<List<String>> = _shown
 
     /** The song playing has its parts on this phone (split here, copied, or fetched from its server). */
     private val _available = MutableStateFlow(false)
@@ -42,7 +48,20 @@ class Mixer(private val app: App) {
 
     /** The song's parts here: split here or copied, else fetched from its server; empty: none. */
     private fun partsOf(t: Track): Map<String, java.io.File> =
-        Import.parts(app, t.key).takeIf { it.keys.containsAll(PARTS) } ?: ServerSongs.parts(app, t)
+        Import.parts(app, t.key).takeIf { setFor(it.keys) != null } ?: ServerSongs.parts(app, t)
+
+    /** Which set of parts [files] make: the four, else the two halves, else none. */
+    private fun setFor(names: Set<String>): List<String>? = when {
+        names.containsAll(PARTS) -> PARTS
+        names.containsAll(HALVES) -> HALVES
+        else -> null
+    }
+
+    private fun look(t: Track?) {
+        val set = t?.let { setFor(partsOf(it).keys) }
+        _shown.value = set ?: emptyList()
+        _available.value = set != null
+    }
 
     /** The song playing changed: the parts for it, if it's mixed. */
     fun songChanged(t: Track?) {
@@ -50,7 +69,7 @@ class Mixer(private val app: App) {
         stop()
         song = t?.key
         track = t
-        _available.value = t != null && partsOf(t).keys.containsAll(PARTS)
+        look(t)
         if (_available.value && !allUp()) engage()
     }
 
@@ -59,7 +78,7 @@ class Mixer(private val app: App) {
         scope.launch {
             val t = app.player.current.value ?: return@launch
             if (t.key != song || _available.value) return@launch
-            _available.value = partsOf(t).keys.containsAll(PARTS)
+            look(t)
             if (_available.value && !allUp()) engage()
         }
     }
@@ -73,9 +92,9 @@ class Mixer(private val app: App) {
         } else if (_available.value && !allUp()) engage()
     }
 
-    /** Song (all up), No vocals, Vocals only. */
+    /** Song (all up), No vocals, Vocals only: for the four parts and the two halves alike. */
     fun preset(vocals: Float, rest: Float) {
-        for (p in PARTS) set(p, if (p == "vocals") vocals else rest)
+        for (p in (PARTS + HALVES).distinct()) set(p, if (p == "vocals") vocals else rest)
     }
 
     fun playingChanged(on: Boolean) = engine?.setPlaying(on)
@@ -85,10 +104,10 @@ class Mixer(private val app: App) {
     private fun engage() {
         val t = track ?: return
         val files = partsOf(t)
-        if (!files.keys.containsAll(PARTS)) return
+        val set = setFor(files.keys) ?: return
         val hub = app.player
         // split in six on the computer: Piano and Guitar play too, moving with Other (the song stays whole)
-        val names = PARTS + EXTRAS.filter { it in files }
+        val names = if (set == PARTS) PARTS + EXTRAS.filter { it in files } else set
         val other = _gains.value["other"] ?: 1f
         val e = runCatching { PartsEngine(names.associateWith { files.getValue(it) }, _gains.value + EXTRAS.associateWith { other }) }.getOrNull() ?: return
         engine = e
@@ -122,6 +141,8 @@ class Mixer(private val app: App) {
 
     companion object {
         val PARTS = listOf("drums", "bass", "other", "vocals")
+        /** A song split in two (on the phone): Music (everything but the voice) and Vocals. */
+        val HALVES = listOf("music", "vocals")
         /** A song split in six also has these (the rest of Other). */
         val EXTRAS = listOf("guitar", "piano")
         private const val START_LEAD_MS = 150L
