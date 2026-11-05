@@ -7,9 +7,7 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.automirrored.rounded.CallSplit
 import androidx.compose.material.icons.rounded.StopCircle
-import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MicOff
 import android.Manifest
@@ -64,6 +62,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -124,6 +123,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -150,6 +150,19 @@ import io.github.radianceadm.music.play.Effects
 import io.github.radianceadm.music.source.Line
 import io.github.radianceadm.music.source.Lyrics
 import io.github.radianceadm.music.server.Servers
+import io.github.radianceadm.music.server.ServerSongs
+import io.github.radianceadm.music.play.Mixer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.window.Popup
 import io.github.radianceadm.music.split.Model
 import io.github.radianceadm.music.split.Setup
 import io.github.radianceadm.music.split.SplitService
@@ -212,8 +225,8 @@ private fun rememberPosition(): Pair<Long, Long> {
  * Now Playing, as Apple Music's (owner, 2026-10-31): the cover big, a little smaller
  * while paused; swipe it left or right for the next or previous song, and down to
  * close. Under it the song, a thin white bar, white controls, and a row of Lyrics
- * (a quote bubble, not a mic), Mixer, Share and Queue. With lyrics on, the cover
- * goes small at the top beside the song.
+ * (a quote bubble), Karaoke (the mic, as Apple Music Sing's: android#20), Mixer,
+ * Share and Queue. With lyrics on, the cover goes small at the top beside the song.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -283,10 +296,12 @@ fun NowPlayingScreen(onClose: () -> Unit) {
             }
             Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                 RoundToggle(showLyrics, "Lyrics", { showLyrics = !showLyrics }) { on -> LyricsIcon(on) }
+                KaraokeButton(t, onAskServer = { showMixer = true })
                 RoundToggle(false, "Mixer", { if (t != null) showMixer = true }) { Icon(Icons.Rounded.Tune, null, tint = Color.White.copy(alpha = 0.85f)) }
                 RoundToggle(false, "Share", { if (t != null) sharing = emptyList() }) { Icon(Icons.Rounded.IosShare, null, tint = Color.White.copy(alpha = 0.85f)) }
                 RoundToggle(false, "Queue", { showQueue = true }) { Icon(Icons.AutoMirrored.Rounded.FormatListBulleted, null, tint = Color.White.copy(alpha = 0.85f)) }
             }
+            if (t != null) KaraokeStatus(t)
         }
     }
     if (t != null) sharing?.let { start -> ShareSheet(t, start, onDismiss = { sharing = null }) }
@@ -493,26 +508,25 @@ private fun LyricsIcon(on: Boolean) {
 }
 
 /**
- * Each part as loud as you like (a split song); the song stays as loud as it was whole. And the effects, on every song.
- * A song from a server you joined is split there (when its owner lets you), and its parts come from there.
+ * The Mixer: the whole song, karaoke, or the singing only, one tap each (owner,
+ * 2026-11-05, android#20: "one click nalang", no slider per part), and the
+ * effects, on every song. Not split yet: karaoke or the singing only splits
+ * it first. A song from a server you joined is split there (when its owner
+ * lets you), and its parts come from there.
  */
 @Composable
-internal fun MixerSheet(t: Track, mixable: Boolean, parts: List<String>? = null, onDone: () -> Unit) {
-    val mixer = App.instance.mixer
-    val gains by mixer.gains.collectAsState()
+internal fun MixerSheet(t: Track, mixable: Boolean, onDone: () -> Unit) {
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 22.dp, end = 22.dp, top = 18.dp, bottom = 28.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Mixer", style = MaterialTheme.typography.headlineSmall, color = Color.White, modifier = Modifier.weight(1f))
             FilledTonalButton(onClick = onDone) { Labeled(Icons.Rounded.Check, "Done") }
         }
-        if (mixable) {
-            Text("Each part as loud as you like. Turning one down keeps the song as loud as it was whole.", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
-            Gap(12.dp)
-            PartSliders(gains, parts)
-        } else if (Servers.of(t) != null) {
-            ServerSplitPanel(t) { SplitPanel(t) }
-        } else {
-            SplitPanel(t)
+        Text("Karaoke takes the singing out; Vocals only keeps just the singing. Press and slide the mic on the song's screen for a little of the singing.", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
+        Gap(12.dp)
+        VoiceChoices(t)
+        if (!mixable) {
+            Gap(14.dp)
+            if (Servers.of(t) != null) ServerSplitPanel(t) { SplitPanel(t) } else SplitPanel(t)
         }
         Gap(16.dp)
         Text("Effects", style = MaterialTheme.typography.titleMedium, color = Color.White)
@@ -541,38 +555,182 @@ private fun MixSlider(value: Float, onValueChange: (Float) -> Unit, modifier: Mo
     )
 }
 
+/** Asks once to show the split's progress as a notification, then does [then] (asked or not). */
+@Composable
+private fun rememberNotesFirst(): ((() -> Unit) -> Unit) {
+    val context = LocalContext.current
+    var after by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { after?.invoke(); after = null }
+    return { then ->
+        val granted = Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        if (granted) then() else { after = then; ask.launch(Manifest.permission.POST_NOTIFICATIONS) }
+    }
+}
+
+/** Whole song, Karaoke, Vocals only: the one lit is what plays. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun PartSliders(gains: Map<String, Float>, parts: List<String>?) {
+private fun VoiceChoices(t: Track) {
     val mixer = App.instance.mixer
-    val playing by mixer.shown.collectAsState()
-    val shown = parts ?: playing
-    val labels = mapOf("drums" to "Drums", "bass" to "Bass", "other" to "Other", "music" to "Music", "vocals" to "Vocals")
-    Column {
-        // the song's two halves (split on this phone) or its four parts (split on the computer or a server)
-        for (name in shown) {
-            val label = labels[name] ?: name.replaceFirstChar { it.uppercase() }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(label, color = Color.White, modifier = Modifier.width(72.dp))
-                MixSlider(value = gains[name] ?: 1f, onValueChange = { mixer.set(name, it) }, modifier = Modifier.weight(1f))
-                Text("${((gains[name] ?: 1f) * 100).toInt()} %", color = Brand.Dim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(44.dp).padding(start = 8.dp))
-            }
-        }
-        Gap(8.dp)
-        // the buttons wrap to a second line when they don't fit (owner, 2026-11-01: "yung reset
-        // from top to down. masikep": in one row, Reset was squeezed to a letter a line)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilledTonalButton(onClick = { mixer.preset(vocals = 0f, rest = 1f) }) { Labeled(Icons.Rounded.MicOff, "No vocals") }
-            FilledTonalButton(onClick = { mixer.preset(vocals = 1f, rest = 0f) }) { Labeled(Icons.Rounded.Mic, "Vocals only") }
-            FilledTonalButton(onClick = { mixer.preset(vocals = 1f, rest = 1f) }) { Labeled(Icons.Rounded.RestartAlt, "Reset") }
+    val voice by mixer.voice.collectAsState()
+    val notesFirst = rememberNotesFirst()
+    // the buttons wrap to a second line when they don't fit (owner, 2026-11-01: "masikep")
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        for ((v, icon, label) in listOf(
+            Triple(Mixer.Voice.Song, Icons.Rounded.MusicNote, "Whole song"),
+            Triple(Mixer.Voice.Karaoke, Icons.Rounded.MicOff, "Karaoke"),
+            Triple(Mixer.Voice.VocalsOnly, Icons.Rounded.Mic, "Vocals only"),
+        )) {
+            val pick = { if (v == Mixer.Voice.Song || mixer.hasParts(t)) mixer.voice(v) else notesFirst { mixer.voice(v) } }
+            if (voice == v) Button(onClick = pick, colors = ButtonDefaults.buttonColors(containerColor = Brand.Orange)) { Labeled(icon, label) }
+            else FilledTonalButton(onClick = pick) { Labeled(icon, label) }
         }
     }
 }
 
 /**
- * Not split yet: split it here (one at a time, in the background), and how
- * many cores that may use. The splitter not here yet (its setup: offline, or
- * still downloading) says so instead of failing.
+ * Karaoke, as Apple Music Sing (owner, 2026-11-05, android#20): tap the mic and
+ * the singing goes, tap it again for the whole song; press and slide it up or
+ * down for how much of the singing stays. Not split yet: the first tap splits
+ * it (the song plays whole meanwhile, then karaoke comes in by itself), with a
+ * ring going round the mic. A server that splits for you: the Mixer opens, to
+ * ask it there ([onAskServer]).
+ */
+@Composable
+private fun KaraokeButton(t: Track?, onAskServer: () -> Unit) {
+    val app = App.instance
+    val mixer = app.mixer
+    val voice by mixer.voice.collectAsState()
+    val singing by mixer.singing.collectAsState()
+    val ready by mixer.available.collectAsState()
+    val now by app.splits.now.collectAsState()
+    val on = voice == Mixer.Voice.Karaoke
+    val notesFirst = rememberNotesFirst()
+    val haptics = LocalHapticFeedback.current
+    var sliding by remember { mutableStateOf(false) }
+    val density = LocalDensity.current
+    val travel = with(density) { SING_TRAVEL.toPx() }
+    // a server that splits for you is asked in the Mixer: it opens
+    fun askServer(song: Track) = Servers.of(song)?.let { it.can.split && !ServerSongs.splitThere(song) && !mixer.hasParts(song) } == true
+    fun turnOn() {
+        val song = t ?: return
+        if (mixer.hasParts(song)) return mixer.voice(Mixer.Voice.Karaoke)
+        if (askServer(song)) { mixer.voice(Mixer.Voice.Karaoke); return onAskServer() }
+        notesFirst { mixer.voice(Mixer.Voice.Karaoke) } // Ahead splits it
+    }
+    // read as it is now (the gesture below outlives this drawing)
+    val tap by rememberUpdatedState { if (mixer.voice.value == Mixer.Voice.Karaoke) mixer.voice(Mixer.Voice.Song) else turnOn() }
+    val afterSlide by rememberUpdatedState { if (t != null && askServer(t)) onAskServer() }
+    Box(contentAlignment = Alignment.Center) {
+        Box(
+            Modifier.size(52.dp)
+                .semantics {
+                    contentDescription = "Karaoke"
+                    stateDescription = if (on) "On, ${(singing * 100).roundToInt()} % of the singing" else "Off"
+                    progressBarRangeInfo = ProgressBarRangeInfo(singing, 0f..1f)
+                    setProgress { v -> mixer.singing(v); mixer.singingSet(); true }
+                    onClick(label = if (on) "Whole song" else "Karaoke") { tap(); true }
+                }
+                .pointerInput(t?.key) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown()
+                        var tapped = false
+                        val held = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                            tapped = waitForUpOrCancellation() != null
+                        } == null
+                        if (!held) { if (tapped) tap(); return@awaitEachGesture }
+                        // held: the slider comes up; up is more singing, down is less
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        sliding = true
+                        var level = mixer.singing.value
+                        mixer.singing(level) // karaoke on (Ahead splits it, if it isn't yet)
+                        try {
+                            while (true) {
+                                val e = awaitPointerEvent()
+                                val c = e.changes.firstOrNull { it.id == down.id } ?: break
+                                if (!c.pressed) break
+                                level = (level - c.positionChange().y / travel).coerceIn(0f, 1f)
+                                mixer.singing(level)
+                                c.consume()
+                            }
+                        } finally {
+                            sliding = false
+                            mixer.singingSet()
+                        }
+                        afterSlide()
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            val waiting = on && !ready && t != null
+            if (waiting) {
+                val step = now?.takeIf { it.track.key == t?.key }?.step
+                if (step != null && step.done > 0f) CircularProgressIndicator(progress = { step.done }, color = Brand.Orange, trackColor = Color.White.copy(alpha = 0.15f), strokeWidth = 2.5.dp, modifier = Modifier.size(46.dp))
+                else CircularProgressIndicator(color = Brand.Orange, strokeWidth = 2.5.dp, modifier = Modifier.size(46.dp))
+            }
+            Box(Modifier.size(40.dp).clip(CircleShape).background(if (on) Color.White else Color.Transparent), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.Mic, null, tint = if (on) Color.Black else Color.White.copy(alpha = 0.85f), modifier = Modifier.size(26.dp))
+            }
+        }
+        if (sliding) {
+            val lift = with(density) { (52.dp + 10.dp).roundToPx() }
+            Popup(alignment = Alignment.BottomCenter, offset = IntOffset(0, -lift)) { SingSlider(singing) }
+        }
+    }
+}
+
+/** How far a finger moves the singing from none to all. */
+private val SING_TRAVEL = 180.dp
+
+/** The mic's slider while it's held: a soft rounded column, filled up to how much singing stays. */
+@Composable
+internal fun SingSlider(level: Float) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(if (level < 0.005f) "No singing" else "Singing ${(level * 100).roundToInt()} %", color = Color.White, style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.clip(RoundedCornerShape(50)).background(Brand.Sheet.copy(alpha = 0.92f)).padding(horizontal = 10.dp, vertical = 4.dp))
+        Gap(6.dp)
+        Box(Modifier.width(56.dp).height(SING_TRAVEL).shadow(12.dp, RoundedCornerShape(28.dp)).clip(RoundedCornerShape(28.dp)).background(Brand.Sheet.copy(alpha = 0.92f))
+            .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(28.dp)), contentAlignment = Alignment.BottomCenter) {
+            Box(Modifier.fillMaxWidth().fillMaxHeight(level.coerceIn(0f, 1f)).background(Color.White))
+            Icon(Icons.Rounded.Mic, null, tint = if (level > 0.12f) Color.Black else Color.White, modifier = Modifier.padding(bottom = 14.dp).size(24.dp))
+        }
+    }
+}
+
+/**
+ * Under the row while karaoke (or the singing only) is on but this song's
+ * parts aren't here yet: what it's waiting for, in a line. It plays whole meanwhile.
+ */
+@Composable
+private fun KaraokeStatus(t: Track) {
+    val app = App.instance
+    val voice by app.mixer.voice.collectAsState()
+    val ready by app.mixer.available.collectAsState()
+    val now by app.splits.now.collectAsState()
+    val queue by app.splits.queue.collectAsState()
+    val problem by app.splits.problem.collectAsState()
+    val setup by Setup.state.collectAsState()
+    val fetching by ServerSongs.fetching.collectAsState()
+    if (voice == Mixer.Voice.Song || ready) return
+    val mode = if (voice == Mixer.Voice.Karaoke) "Karaoke" else "Vocals only"
+    val here = now?.takeIf { it.track.key == t.key }
+    val server = Servers.of(t)
+    val line = when {
+        here != null -> "$mode in a moment: ${here.step.what.lowercase()} · ${(here.step.done * 100).toInt()} %"
+        fetching[t.key] != null -> "$mode in a moment: getting its parts from ${server?.name ?: "the server"} · ${((fetching[t.key] ?: 0f) * 100).toInt()} %"
+        queue.any { it.key == t.key } -> if (setup == Setup.State.Ready) "$mode once the song before it is split" else "$mode once the splitter is ready"
+        problem != null -> problem.orEmpty()
+        server != null && server.can.split && !ServerSongs.splitThere(t) -> "$mode: ask ${server.name} to split it, in the Mixer"
+        else -> "$mode: getting ready…"
+    }
+    Text(line, color = Brand.Dim, style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center, maxLines = 2, modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp))
+}
+
+/**
+ * Not split yet: how its split here goes (one at a time, in the background),
+ * and how many cores that may use. Karaoke or Vocals only starts it. The
+ * splitter not here yet (its setup: offline, or still downloading) says so
+ * instead of failing.
  */
 @Composable
 private fun SplitPanel(t: Track) {
@@ -583,8 +741,6 @@ private fun SplitPanel(t: Track) {
     val problem by splits.problem.collectAsState()
     val setup by Setup.state.collectAsState()
     var cores by remember { mutableIntStateOf(splits.cores) }
-    val context = LocalContext.current
-    val askNotes = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { splits.add(t) }
     val here = now?.takeIf { it.track.key == t.key }
     val place = queue.indexOfFirst { it.key == t.key }
     Column {
@@ -595,7 +751,7 @@ private fun SplitPanel(t: Track) {
                 Gap(8.dp)
                 LinearProgressIndicator(progress = { here.step.done }, color = Brand.Orange, trackColor = Color.White.copy(alpha = 0.15f), modifier = Modifier.fillMaxWidth())
                 Gap(8.dp)
-                Text("It goes on with the screen off. The Mixer's parts appear here when it's done.", color = Brand.Dim, style = MaterialTheme.typography.labelSmall)
+                Text("It goes on with the screen off. Karaoke comes in by itself when it's done.", color = Brand.Dim, style = MaterialTheme.typography.labelSmall)
                 Gap(8.dp)
                 FilledTonalButton(onClick = { splits.remove(t.key) }) { Labeled(Icons.Rounded.StopCircle, "Stop splitting") }
             }
@@ -608,14 +764,8 @@ private fun SplitPanel(t: Track) {
             }
             setup != Setup.State.Ready -> SplitterNotReady(setup)
             else -> {
-                Text("Split this song into its vocals and its music, here on this phone: No vocals makes it karaoke, Vocals only keeps just the singing.", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
+                Text("Not split yet. Karaoke or Vocals only splits it first, here on this phone: about 15 seconds for a 4-minute song.", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
                 if (t.file == null) Text("It's liked and saved first.", color = Brand.Dim, style = MaterialTheme.typography.labelSmall)
-                Gap(8.dp)
-                Button(onClick = {
-                    if (!app.library.isLiked(t.key)) app.like(t)
-                    val granted = Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-                    if (granted) splits.add(t) else askNotes.launch(Manifest.permission.POST_NOTIFICATIONS)
-                }, colors = ButtonDefaults.buttonColors(containerColor = Brand.Orange)) { Labeled(Icons.AutoMirrored.Rounded.CallSplit, "Split this song") }
             }
         }
         problem?.let { Gap(6.dp); Text(it, color = Brand.Orange, style = MaterialTheme.typography.labelSmall) }

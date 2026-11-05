@@ -1,5 +1,6 @@
 package io.github.radianceadm.music.play
 
+import android.content.Context
 import io.github.radianceadm.music.App
 import io.github.radianceadm.music.data.Import
 import io.github.radianceadm.music.model.Track
@@ -16,23 +17,32 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 /**
- * The Mixer: a split song's parts, each as loud as you like: its two halves
- * (Music, Vocals: how the phone splits since 0.5.17, #43) or its four parts
- * (split on the computer or a server; a song split in six on the computer also
- * plays its Piano and Guitar, with Other). Four win when a song has both. The player
- * keeps playing the song itself, silently, and drives everything (the lock
- * screen, Bluetooth buttons, seeking, the next song); the parts follow it,
- * mixed by PartsEngine. Your mix stays from song to song. A song from a
- * Radiance Music Server split there plays its parts fetched from the server
- * (ServerSongs), the same way.
+ * The Mixer: a split song played as the whole song, as karaoke (the singing
+ * out, or down to [singing]), or as its singing only ([Voice]). Owner,
+ * 2026-11-05 (android#20): one tap, as Apple Music Sing, no slider per part.
+ * A song has its two halves (Music, Vocals: how the phone splits since 0.5.17,
+ * #43) or its four parts (split on the computer or a server; a song split in
+ * six on the computer also plays its Piano and Guitar, with Other). Four win
+ * when a song has both. The player keeps playing the song itself, silently,
+ * and drives everything (the lock screen, Bluetooth buttons, seeking, the next
+ * song); the parts follow it, mixed by PartsEngine. Karaoke stays on from song
+ * to song (Ahead splits the next one). A song from a Radiance Music Server
+ * split there plays its parts fetched from the server (ServerSongs), the same way.
  */
 class Mixer(private val app: App) {
+    /** What a split song plays as: all of it, karaoke, or just the singing. */
+    enum class Voice { Song, Karaoke, VocalsOnly }
+
     private val _gains = MutableStateFlow((PARTS + HALVES).distinct().associateWith { 1f })
     val gains: StateFlow<Map<String, Float>> = _gains
 
-    /** The sliders the song playing has: [PARTS] or [HALVES] (empty: not split). */
-    private val _shown = MutableStateFlow<List<String>>(emptyList())
-    val shown: StateFlow<List<String>> = _shown
+    private val prefs = app.getSharedPreferences("mixer", Context.MODE_PRIVATE)
+    private val _voice = MutableStateFlow(Voice.Song)
+    /** The whole song when the app opens; stays from song to song. */
+    val voice: StateFlow<Voice> = _voice
+    private val _singing = MutableStateFlow(prefs.getFloat("singing", 0f).coerceIn(0f, 1f))
+    /** How much of the singing karaoke keeps: none at first (press and slide the mic, as Apple Music Sing). Kept. */
+    val singing: StateFlow<Float> = _singing
 
     /** The song playing has its parts on this phone (split here, copied, or fetched from its server). */
     private val _available = MutableStateFlow(false)
@@ -50,6 +60,9 @@ class Mixer(private val app: App) {
     private fun partsOf(t: Track): Map<String, java.io.File> =
         Import.parts(app, t.key).takeIf { setFor(it.keys) != null } ?: ServerSongs.parts(app, t)
 
+    /** [t] has its parts on this phone (split here, copied, or fetched from its server). */
+    fun hasParts(t: Track): Boolean = setFor(partsOf(t).keys) != null
+
     /** Which set of parts [files] make: the four, else the two halves, else none. */
     private fun setFor(names: Set<String>): List<String>? = when {
         names.containsAll(PARTS) -> PARTS
@@ -58,9 +71,7 @@ class Mixer(private val app: App) {
     }
 
     private fun look(t: Track?) {
-        val set = t?.let { setFor(partsOf(it).keys) }
-        _shown.value = set ?: emptyList()
-        _available.value = set != null
+        _available.value = t != null && hasParts(t)
     }
 
     /** The song playing changed: the parts for it, if it's mixed. */
@@ -83,7 +94,7 @@ class Mixer(private val app: App) {
         }
     }
 
-    fun set(name: String, g: Float) {
+    private fun set(name: String, g: Float) {
         _gains.value = _gains.value + (name to g.coerceIn(0f, 1f))
         val e = engine
         if (e != null) {
@@ -92,8 +103,28 @@ class Mixer(private val app: App) {
         } else if (_available.value && !allUp()) engage()
     }
 
-    /** Song (all up), No vocals, Vocals only: for the four parts and the two halves alike. */
-    fun preset(vocals: Float, rest: Float) {
+    /** The whole song, karaoke, or the singing only: for the four parts and the two halves alike. */
+    fun voice(v: Voice) {
+        _voice.value = v
+        mix()
+    }
+
+    /** Karaoke's singing, as the mic's slider moves (karaoke goes on, as Apple Music Sing's does). */
+    fun singing(level: Float) {
+        _singing.value = level.coerceIn(0f, 1f)
+        if (_voice.value != Voice.Karaoke) _voice.value = Voice.Karaoke
+        mix()
+    }
+
+    /** The slider let go: its level kept for next time. */
+    fun singingSet() = prefs.edit().putFloat("singing", _singing.value).apply()
+
+    private fun mix() {
+        val (vocals, rest) = when (_voice.value) {
+            Voice.Song -> 1f to 1f
+            Voice.Karaoke -> _singing.value to 1f
+            Voice.VocalsOnly -> 1f to 0f
+        }
         for (p in (PARTS + HALVES).distinct()) set(p, if (p == "vocals") vocals else rest)
     }
 

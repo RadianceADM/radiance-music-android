@@ -673,7 +673,7 @@ internal fun ServerSplitPanel(t: Track, phone: @Composable () -> Unit) {
             s == null -> Text("Looking for it on ${server.name}…", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
             s.split -> {
                 Text("Getting its parts from ${server.name}", color = Color.White, style = MaterialTheme.typography.titleMedium)
-                Text("Split there already: its four parts come to this phone, then each one's slider is here.", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
+                Text("Split there already: its parts come to this phone, then Karaoke and Vocals only work.", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
                 Gap(8.dp)
                 val done = fetching[t.key]
                 if (done != null) LinearProgressIndicator(progress = { done }, color = Brand.Orange, trackColor = Color.White.copy(alpha = 0.15f), modifier = Modifier.fillMaxWidth())

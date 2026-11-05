@@ -91,6 +91,7 @@ class App : Application(), SingletonImageLoader.Factory {
         player = PlayerHub(this)
         mixer = Mixer(this)
         splits = Splits(this)
+        io.github.radianceadm.music.split.Ahead(this).start() // karaoke on: the song playing and the next one get split (android#20)
         share = Session(this)
         party = Party(this)
         saveMissing()

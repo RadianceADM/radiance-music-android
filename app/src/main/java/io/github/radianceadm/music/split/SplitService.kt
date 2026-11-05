@@ -115,7 +115,7 @@ class SplitService : Service() {
         super.onCreate()
         notes = getSystemService(NotificationManager::class.java)
         notes.createNotificationChannel(NotificationChannel(CHANNEL, "Splitting songs", NotificationManager.IMPORTANCE_LOW).apply {
-            description = "A song being split into drums, bass, other and vocals"
+            description = "A song being split into its vocals and its music"
         })
     }
 
