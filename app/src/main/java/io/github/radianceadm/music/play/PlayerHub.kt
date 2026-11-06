@@ -205,6 +205,11 @@ class PlayerHub(private val context: Context) {
         controller?.volume = v.coerceIn(0f, 1f)
     }
 
+    /** Paused (a music video opening over it, say); in a party, it stops listening here. */
+    fun pause() = controller?.run {
+        if (App.instance.party.joined) App.instance.party.listenHere(false) else pause()
+    }
+
     fun toggle() = controller?.run {
         // in a party: listening here or not (the party goes on)
         if (App.instance.party.joined) return@run App.instance.party.listenHere(!isPlaying)

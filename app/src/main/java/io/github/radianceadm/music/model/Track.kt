@@ -21,7 +21,7 @@ data class Track(
     val format: String = "",
     /** The saved copy (a content:// address in Music/Radiance Music), once liked and saved. */
     val file: String? = null,
-    /** Its saved music video (content:// in Movies/Radiance Music). */
+    /** Its saved music video (file:// in the app's own folder; before 1.0.2, content:// in Movies/Radiance Music). */
     val video: String? = null,
 ) {
     val key: String get() = when (source) {

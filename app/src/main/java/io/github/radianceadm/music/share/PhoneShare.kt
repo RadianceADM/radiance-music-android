@@ -68,7 +68,7 @@ object PhoneShare {
         fun bytes() = made.sumOf { i -> i.files.values.sumOf { it.size } }
     }
 
-    /** Songs coming in: into Music/ and Movies/ Radiance Music and the app's own folders, then Liked Songs. */
+    /** Songs coming in: into Music/Radiance Music and the app's own folders (videos too), then Liked Songs. */
     class Store(private val context: Context) : Wire.Store {
         private val library = App.instance.library
         /** What each song came as so far (its file, its video). */
@@ -117,8 +117,8 @@ object PhoneShare {
                     saved[item.key] = uri.toString() to saved[item.key]?.second
                 }
                 "video" -> {
-                    val uri = Saver.keepVideo(context, safeName(name, ext.ifEmpty { "mp4" }), mimeOf(ext)) { input.copyTo(it) }
-                    saved[item.key] = saved[item.key]?.first to uri.toString()
+                    val kept = Saver.keepVideo(context, t.key, ext.ifEmpty { "mp4" }) { input.copyTo(it) }
+                    saved[item.key] = saved[item.key]?.first to kept
                 }
                 "lyrics" -> into(Saver.lyricsFile(context, t), input)
                 "cover" -> into(Saver.coverFile(context, t), input)

@@ -178,6 +178,8 @@ private fun Radiance() {
         UpdatePrompt(shown = !splash && !guide)
         // now and then, at a free moment: are you enjoying it? (never over the splash or the guide)
         FeedbackPrompt(shown = !splash && !guide)
+        // the music videos moved into the app: their old copies out of Gallery, asked once (android#26)
+        OldVideosPrompt(shown = !splash && !guide)
     }
 }
 

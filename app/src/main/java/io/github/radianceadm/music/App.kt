@@ -8,6 +8,7 @@ import io.github.radianceadm.music.data.Found
 import io.github.radianceadm.music.data.Import
 import io.github.radianceadm.music.data.Library
 import io.github.radianceadm.music.data.Saver
+import io.github.radianceadm.music.data.Videos
 import io.github.radianceadm.music.model.Track
 import io.github.radianceadm.music.net.Connectivity
 import io.github.radianceadm.music.net.Errors
@@ -96,6 +97,8 @@ class App : Application(), SingletonImageLoader.Factory {
         share = Session(this)
         party = Party(this)
         saveMissing()
+        _oldVideos.value = videoPrefs.getStringSet("old", emptySet()).orEmpty().map { android.net.Uri.parse(it) }
+        moveVideos() // music videos saved before 1.0.2: out of Gallery, into the app (android#26)
         // back online: liked songs that couldn't be saved meanwhile are saved now
         scope.launch {
             Connectivity.online.drop(1).filter { it }.collect {
@@ -151,6 +154,7 @@ class App : Application(), SingletonImageLoader.Factory {
     fun importLibrary() {
         scope.launch {
             val n = runCatching { saving.withLock { Import.run(this@App, library) } }
+            if (n.isSuccess) moveVideos()
             tell(n.fold({ Notice("Your library from the computer: $it songs in Liked Songs.") }, { Notice("Couldn't read your library. ${Errors.say(it)}", Notice.retry { importLibrary() }) }))
         }
     }
@@ -172,6 +176,7 @@ class App : Application(), SingletonImageLoader.Factory {
                 }
             }
             _status.value = null
+            moveVideos() // their videos, found in Movies/Radiance Music: into the app
             r.onSuccess { (back, of) ->
                 when {
                     of == 0 -> if (!auto) tell(Notice("All the songs in Music/Radiance Music are in Liked Songs."))
@@ -179,6 +184,42 @@ class App : Application(), SingletonImageLoader.Factory {
                     else -> tell(Notice("$back of $of songs from Music/Radiance Music are back in Liked Songs. The rest come back later (Settings → Find songs saved on this phone).", Notice.retry { findSaved(false) }))
                 }
             }.onFailure { tell(Notice("Couldn't bring back your saved songs. ${Errors.say(it)}", Notice.retry { findSaved(false) })) }
+        }
+    }
+
+    private val videoPrefs by lazy { getSharedPreferences("videos", MODE_PRIVATE) }
+    private val _oldVideos = MutableStateFlow<List<android.net.Uri>>(emptyList())
+    /**
+     * Old copies of music videos (in Movies/Radiance Music) this app may not remove by itself:
+     * the phone asks about them once (MainActivity). Kept until then, the app closing meanwhile.
+     */
+    val oldVideos: StateFlow<List<android.net.Uri>> = _oldVideos
+
+    private fun keepOldVideos(uris: List<android.net.Uri>) {
+        _oldVideos.value = uris
+        videoPrefs.edit().putStringSet("old", uris.map { it.toString() }.toSet()).apply()
+    }
+
+    fun oldVideosAsked() = keepOldVideos(emptyList())
+
+    private var moving: Job? = null
+    @Volatile private var moveAgain = false
+
+    /** Liked songs' videos still in Movies/Radiance Music: into the app's own folder, out of Gallery (see Videos). Asked again meanwhile, it goes round once more. */
+    fun moveVideos() {
+        moveAgain = true
+        if (moving?.isActive == true) return
+        moving = scope.launch {
+            while (moveAgain) {
+                moveAgain = false
+                val left = runCatching {
+                    saving.withLock {
+                        Videos.moveIn(this@App, library) { done, of -> _status.value = if (done < of) "Moving your music videos into the app · $done of $of" else null }
+                    }
+                }.onFailure { android.util.Log.w("radiance-videos", "couldn't move the videos", it) }.getOrDefault(emptyList())
+                _status.value = null
+                if (left.isNotEmpty()) keepOldVideos((_oldVideos.value + left).distinct())
+            }
         }
     }
 

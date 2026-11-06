@@ -4,7 +4,13 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+// org.json is Android's: Robolectric's copy, as in WireTest
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], application = android.app.Application::class)
 class UpNextTest {
     // one item of YouTube Music's "Up next" (a playlistPanelVideoRenderer), as /next sends it
     private val item = JSONObject(

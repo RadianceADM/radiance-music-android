@@ -68,6 +68,11 @@ class ScreensTest {
     @Config(qualifiers = "w360dp-h780dp-xxhdpi", fontScale = 2.0f)
     @Test fun homeLargestFont() { songs(); shot("home-largest-font") { HomeScreen(PaddingValues(), onSearch = {}, onSettings = {}) } }
     @Test fun nowPlaying() = shot("now-playing") { NowPlayingScreen(onClose = {}) }
+    // the music video's button at the top right of the cover (android#26)
+    @Test fun coverWithVideo() = shot("cover-video") { Box(Modifier.padding(26.dp).size(360.dp)) { Cover(null, androidx.compose.foundation.shape.RoundedCornerShape(14.dp), Modifier, watch = {}) } }
+    // the old copies in Gallery, asked once (android#26)
+    @Test fun oldVideos() = shot("old-videos") { Box(Modifier.padding(vertical = 40.dp)) { OldVideosCard(37, onRemove = {}, onKeep = {}) } }
+    @Test fun oldVideosOne() = shot("old-videos-one") { Box(Modifier.padding(vertical = 40.dp)) { OldVideosCard(1, onRemove = {}, onKeep = {}) } }
     @Test fun lyricPicker() = shot("lyric-picker") {
         val lines = listOf("I'm in the mood for dancing", "Romancing, ooh", "Give it up, it's a beautiful night", "So I'm dancing with my baby", "And it feels so right", "Under the stars, under the lights", "We're never going home tonight")
             .map { Pick(it, null) }

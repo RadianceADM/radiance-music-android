@@ -30,14 +30,14 @@ import kotlin.coroutines.resumeWithException
 
 /**
  * Like it, save it: a liked song goes into Music/Radiance Music (Opus from
- * YouTube, FLAC from the Internet Archive), its music video into
- * Movies/Radiance Music (720p, picture and sound joined without re-encoding),
- * its cover and lyrics into the app's own folder.
+ * YouTube, FLAC from the Internet Archive); its music video (720p, picture
+ * and sound joined without re-encoding), its cover and its lyrics into the
+ * app's own folders (the video out of Gallery: see Videos).
  */
 object Saver {
     private fun name(t: Track) = "${t.artist} - ${t.title}".map { if (it in "/\\:*?\"<>|" || it.isISOControl()) '_' else it }.joinToString("").trim().take(150)
 
-    private fun safe(key: String) = key.map { if (it.isLetterOrDigit()) it else '_' }.joinToString("")
+    internal fun safe(key: String) = key.map { if (it.isLetterOrDigit()) it else '_' }.joinToString("")
 
     fun coverFile(context: Context, t: Track) = File(context.filesDir, "covers/${safe(t.key)}.jpg")
     fun lyricsFile(context: Context, t: Track) = File(context.filesDir, "lyrics/${safe(t.key)}.lrc")
@@ -66,7 +66,7 @@ object Saver {
         runCatching { cover(context, out) }
         runCatching { lyrics(context, out) }
         if (out.source == Source.YOUTUBE && out.video == null) {
-            runCatching { saveVideo(context, out, say) }.getOrNull()?.let { out = out.copy(video = it.toString()) }
+            runCatching { saveVideo(context, out, say) }.getOrNull()?.let { out = out.copy(video = it) }
         }
         out
     }
@@ -125,9 +125,9 @@ object Saver {
     fun keepSong(context: Context, display: String, mime: String, write: (java.io.OutputStream) -> Unit): Uri =
         keep(context, MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), display, mime, "Music/Radiance Music", write)
 
-    /** A music video that came from another device, into Movies/Radiance Music. */
-    fun keepVideo(context: Context, display: String, mime: String, write: (java.io.OutputStream) -> Unit): Uri =
-        keep(context, MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), display, mime, "Movies/Radiance Music", write)
+    /** A music video that came from another device, kept for the song [key] in the app's folder. Its address. */
+    fun keepVideo(context: Context, key: String, ext: String, write: (java.io.OutputStream) -> Unit): String =
+        Videos.keep(context, key, ext, write)
 
     /** A new file in [folder], written by [write]; a half-written one isn't kept. */
     private fun keep(context: Context, collection: Uri, display: String, mime: String, folder: String, write: (java.io.OutputStream) -> Unit): Uri {
@@ -167,7 +167,9 @@ object Saver {
         return found
     }
 
-    private suspend fun saveVideo(context: Context, t: Track, say: (String) -> Unit): Uri? {
+    private suspend fun saveVideo(context: Context, t: Track, say: (String) -> Unit): String? {
+        // liked before (and unliked): its video is still here
+        Videos.kept(context, t.key)?.let { return Videos.address(it) }
         val video = YouTube.counterpart(t) ?: return null
         say("Saving “${t.title}”'s music video…")
         val cache = File(context.cacheDir, "video-${safe(t.key)}").apply { mkdirs() }
@@ -184,11 +186,7 @@ object Saver {
                 val one = YouTube.videoWithSound(video.id) ?: return null
                 joined.outputStream().use { Http.download(one.url, it, one.size) }
             }
-            val collection = MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-            val uri = insert(context, collection, "${name(t)}.mp4", "video/mp4", "Movies/Radiance Music")
-            context.contentResolver.openOutputStream(uri)!!.use { out -> joined.inputStream().use { it.copyTo(out) } }
-            finish(context, uri)
-            return uri
+            return Videos.put(context, t.key, joined)
         } finally {
             cache.deleteRecursively()
         }

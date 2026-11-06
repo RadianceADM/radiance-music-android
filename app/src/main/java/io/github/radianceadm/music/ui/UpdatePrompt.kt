@@ -184,9 +184,9 @@ fun UpdateCard(
     }
 }
 
-/** The step's icon in a soft orange circle, its title and what it means. */
+/** The step's icon in a soft orange circle, its title and what it means (the pop-ups share these). */
 @Composable
-private fun Head(icon: ImageVector, title: String, text: String) {
+internal fun Head(icon: ImageVector, title: String, text: String) {
     Box(Modifier.size(52.dp).background(Brand.Orange.copy(alpha = 0.18f), CircleShape), contentAlignment = Alignment.Center) {
         Icon(icon, null, tint = Brand.Orange, modifier = Modifier.size(28.dp))
     }
@@ -197,19 +197,19 @@ private fun Head(icon: ImageVector, title: String, text: String) {
 }
 
 @Composable
-private fun Main(icon: ImageVector, text: String, onClick: () -> Unit) =
+internal fun Main(icon: ImageVector, text: String, onClick: () -> Unit) =
     Button(onClick = onClick, colors = ButtonDefaults.buttonColors(containerColor = Brand.Orange, contentColor = Color.Black), modifier = Modifier.fillMaxWidth().height(52.dp)) {
         Labeled(icon, text)
     }
 
 @Composable
-private fun Second(icon: ImageVector, text: String, onClick: () -> Unit) =
+internal fun Second(icon: ImageVector, text: String, onClick: () -> Unit) =
     FilledTonalButton(onClick = onClick, colors = ButtonDefaults.filledTonalButtonColors(containerColor = Brand.Card, contentColor = Color.White), modifier = Modifier.fillMaxWidth().height(48.dp)) {
         Labeled(icon, text)
     }
 
 @Composable
-private fun Quiet(icon: ImageVector, text: String, onClick: () -> Unit) =
+internal fun Quiet(icon: ImageVector, text: String, onClick: () -> Unit) =
     Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.Center) {
         TextButton(onClick = onClick) { Labeled(icon, text, Brand.Dim) }
     }
