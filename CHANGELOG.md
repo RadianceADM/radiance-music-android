@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.5.18
+## 1.0.0
+
+The first stable release of Radiance Music for Android.
 
 - **Karaoke in one tap:** there's a mic button beside Lyrics on the song's screen, as in Apple
   Music. Tap it and the singing goes down; tap it again for the whole song. Like Apple Music,
@@ -10,38 +12,32 @@
   song is split while this one plays, so it starts as karaoke too.
 - **Smooth switching:** a split song now plays as one stream, the song itself and its parts
   together, so turning karaoke on or off just glides the singing down or up in a third of a
-  second. Nothing stops, restarts or skips. The whole song is the song itself, as it is
-  (lossless), not its parts added up.
+  second. Nothing stops, restarts or skips, right after you jump to another part of the song
+  too. The whole song is the song itself, as it is (lossless), not its parts added up.
 - **No more jumps in karaoke:** karaoke no longer keeps snapping back in step every few seconds
   (each snap was a tiny cut in the sound), and the split song's sound comes first on the phone,
   so it doesn't skip while the phone is busy (splitting the next song, for one).
-- **Splitting starts sooner and shows it:** a song waiting to be split no longer waits for its
-  music video to download first, and reading the song before the split now uses all the cores
-  the split uses. The bar shows the download and the reading too, and keeps moving between
-  steps instead of sitting at 0%.
-- **Sharing songs closes when you're done:** closing the Share songs screen now stops a QR that
-  nobody is using, so it doesn't stay open in the background keeping the phone awake. Songs
-  already on their way keep going, and the notification has a Stop button (tap it to see the
-  share). A QR left unused closes by itself after a few minutes.
-- **A simpler Mixer:** one tap each for Whole song, Karaoke and Vocals only, plus the effects.
-  The sliders for each part (Drums, Bass, Other, Vocals) are gone, for songs split on your
-  computer or a server too.
-
-## 0.5.17
-
 - **Splitting is about 20 times faster:** a song now splits in two, its vocals and its music,
   in seconds instead of minutes (about 10 to 20 seconds for a 4-minute song on a recent phone).
   It uses Deezer's Spleeter instead of Demucs. Songs split in four (on your computer, on a
   server, or on the phone before) still play as karaoke or vocals only.
 - **A smaller splitter:** it downloads once at the first open, 39 MB instead of 166 MB, and the
   old one is deleted from your phone (166 MB back).
-
-## 0.5.16
-
+- **Splitting starts sooner and shows it:** a song waiting to be split no longer waits for its
+  music video to download first, and reading the song before the split now uses all the cores
+  the split uses. The bar shows the download and the reading too, and keeps moving between
+  steps instead of sitting at 0%.
+- **A simpler Mixer:** one tap each for Whole song, Karaoke and Vocals only, plus the effects.
+  The sliders for each part (Drums, Bass, Other, Vocals) are gone, for songs split on your
+  computer or a server too.
 - **Pick the part of the song for your story:** under the story there's now a strip of the song.
   Drag the bright part to the part you want (it plays as you drag), and drag its ends to make it
   from 6 to 30 seconds. Before, a story without lyrics always took 15 seconds from where the song
   was playing. With timed lyric lines picked, the lines still set the part, and the strip shows it.
+- **Sharing songs closes when you're done:** closing the Share songs screen now stops a QR that
+  nobody is using, so it doesn't stay open in the background keeping the phone awake. Songs
+  already on their way keep going, and the notification has a Stop button (tap it to see the
+  share). A QR left unused closes by itself after a few minutes.
 - **"Are you enjoying Radiance Music?"** Now and then (after a week and 30 songs, at most once
   a month, never mid-song) the app asks for five quick star ratings and anything you'd like to
   say. Sending signs you in with Google in one tap; your name and email are kept with your

@@ -242,8 +242,11 @@ class PartsEngine(parts: Map<String, Source>, gains: Map<String, Float>, song: S
     @Volatile private var seekMs = -1L
     @Volatile private var startMs = 0L
     @Volatile private var rate = 44100
-    /** Parts vs song, as compared off the sound thread (lag, how sure). */
-    private val found = java.util.concurrent.atomic.AtomicReference<Pair<Int, Double>?>(null)
+    /** Parts vs song, as compared off the sound thread: for the stretch since seek number [gen], the lag and how sure. */
+    private class Lined(val gen: Int, val lag: Int, val score: Double)
+    private val found = java.util.concurrent.atomic.AtomicReference<Lined?>(null)
+    /** One more with each seek: a comparison from before it is no good after it. */
+    @Volatile private var alignGen = 0
     /** Its first sound went out (after the start). */
     @Volatile var started = false
         private set
@@ -347,6 +350,8 @@ class PartsEngine(parts: Map<String, Source>, gains: Map<String, Float>, song: S
         var tries = 0
         var waitUntil = 0L
         var lag: Int? = null
+        /** How far the parts were moved against the song since the streams last started (each seek starts them again). */
+        var total = 0
         var comparing = false
         try {
             // the decoders say their rates first: the engine plays at the song's own, the parts come to it
@@ -367,7 +372,15 @@ class PartsEngine(parts: Map<String, Source>, gains: Map<String, Float>, song: S
                     track?.pause()
                     track?.flush()
                     all.forEach { it.seek(to * 1000) }
-                    lag?.let { l -> parts.forEach { it.shift(l) } } // the parts as far off as before: lined up again
+                    // a seek lands each stream a little differently (the song's file came 220 ms late after one, in step
+                    // from the start): as far off as last time, most likely, and checked again (owner test, 2026-11-06)
+                    if (total != 0) parts.forEach { it.shift(total) }
+                    alignGen++
+                    found.set(null)
+                    comparing = false
+                    lag = null
+                    tries = 0
+                    waitUntil = 0L
                     effects?.reset()
                     startMs = to
                     fade = 0f
@@ -434,10 +447,17 @@ class PartsEngine(parts: Map<String, Source>, gains: Map<String, Float>, song: S
                         comparing = true
                         val s = songMono.copyOf()
                         val pm = partsMono.copyOf()
-                        Thread({ found.set(Align.find(s, pm, ALIGN_MOST) ?: (0 to -1.0)) }, "radiance-align").start()
+                        val g = alignGen
+                        Thread({
+                            val (l, score) = Align.find(s, pm, ALIGN_MOST) ?: (0 to -1.0)
+                            if (alignGen == g) found.set(Lined(g, l, score))
+                        }, "radiance-align").start()
                     }
                 }
-                found.get()?.let { (l, score) ->
+                found.get()?.let { got ->
+                    if (got.gen != alignGen) { found.compareAndSet(got, null); return@let } // from before a seek
+                    val l = got.lag
+                    val score = got.score
                     val bothQuietOne = blendNow >= 1f && blendTo >= 1f || blendNow <= 0f && blendTo <= 0f
                     if (score < ALIGN_SURE) {
                         // too quiet or too unlike to tell: another stretch a little later
@@ -451,9 +471,10 @@ class PartsEngine(parts: Map<String, Source>, gains: Map<String, Float>, song: S
                         // moved while it isn't heard: the parts when the song plays, the song when the parts do
                         if (blendNow >= 1f) parts.forEach { it.shift(l) } else song?.shift(-l)
                         lag = l
+                        total += l
                         found.set(null)
                         comparing = false
-                        Log.i(TAG, "parts vs the song: ${l} frames (${"%.1f".format(l * 1000.0 / rate)} ms), match ${"%.2f".format(score)}${if (l != 0) ": lined up" else ""}")
+                        Log.i(TAG, "parts vs the song: ${l} frames (${"%.1f".format(l * 1000.0 / rate)} ms), match ${"%.2f".format(score)}${if (l != 0) ": lined up" else ""}${if (total != l) " (${total} in all)" else ""}")
                     }
                 }
                 val target = Limiter.makeup(parts.map { it.power to it.gain })

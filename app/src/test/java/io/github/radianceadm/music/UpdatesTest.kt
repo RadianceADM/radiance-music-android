@@ -13,6 +13,7 @@ class UpdatesTest {
         assertTrue(Updates.newer("0.5.10", "0.5.9"))
         assertTrue(Updates.newer("0.6.0", "0.5.9"))
         assertTrue(Updates.newer("1.0", "0.9.9"))
+        assertTrue(Updates.newer("1.0.0", "0.5.18")) // the first stable release reaches everyone on 0.5
         assertFalse(Updates.newer("0.5.9", "0.5.9"))
         assertFalse(Updates.newer("0.5.8", "0.5.9"))
         assertFalse(Updates.newer("0.5", "0.5.0"))
