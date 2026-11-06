@@ -16,18 +16,27 @@ import kotlin.math.abs
  * nawala yung mga liked music ko? inuninstall ko"). Each file is matched to
  * its song on YouTube Music by its name ("Artist - Title", as Saver names it)
  * and its length, so it gets its cover and lyrics again; it keeps playing its
- * own file. A file with no match waits for the next time (offline, say).
+ * own file. It runs by itself each time the app opens (owner, 2026-11-06: "ayaw
+ * ko na ipagawa yang mga ganyang bagay sa mga user"): a song already in Liked
+ * Songs (by its file or its name) or one you unliked is left alone, and a file
+ * with no match is looked up again a day later, not at every start.
  */
 object Found {
     /** A saved song file: its address, its name without the extension, the extension, its length (0: unknown). */
     data class File(val uri: String, val name: String, val ext: String, val seconds: Int)
 
-    /** The songs saved here that aren't in Liked Songs, matched and liked. [say]: how many done of how many. How many came back of how many there were. */
-    fun run(context: Context, library: Library, say: (Int, Int) -> Unit): Pair<Int, Int> {
+    /**
+     * The songs saved here that aren't in Liked Songs, matched and liked ([everything]: those
+     * that had no match lately too, as from Settings). [say]: how many done of how many.
+     * How many came back of how many there were.
+     */
+    fun run(context: Context, library: Library, everything: Boolean = false, say: (Int, Int) -> Unit): Pair<Int, Int> {
         val songs = files(context, MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, "Music/Radiance Music")
         val videos = files(context, MediaStore.Video.Media.EXTERNAL_CONTENT_URI, "Movies/Radiance Music").associateBy { it.name }
-        val mine = library.liked.value.mapNotNull { it.file }.toSet()
-        val missing = songs.filter { it.uri !in mine }
+        val liked = library.liked.value
+        val skip = library.unlikedFiles()
+        val tried = Tried(context)
+        val missing = waiting(songs, liked, skip).filter { everything || tried.due(it.name) }
         var back = 0
         missing.forEachIndexed { i, f ->
             say(i, missing.size)
@@ -37,6 +46,7 @@ object Found {
                 .getOrNull()?.let { pick(f, it) }
             if (found == null) {
                 Log.i(TAG, "no match for “${f.name}”")
+                tried.missed(f.name)
                 return@forEachIndexed
             }
             val t = found.copy(
@@ -52,6 +62,38 @@ object Found {
         say(missing.size, missing.size)
         Log.i(TAG, "brought back $back of ${missing.size} saved songs")
         return back to missing.size
+    }
+
+    /**
+     * The saved song files that aren't in Liked Songs: not linked from a liked song (by
+     * its address, or a file:// one from the computer's library by its file name), not
+     * named as a liked song is saved ("Artist - Title"), and not unliked ([skip]).
+     */
+    fun waiting(songs: List<File>, liked: List<Track>, skip: Set<String>): List<File> {
+        val links = liked.mapNotNull { it.file }.toSet()
+        val fileNames = links.filter { it.startsWith("file://") }.map { it.substringAfterLast('/') }.toSet()
+        val names = liked.map { Saver.name(it) }.toSet()
+        return songs.filter { f -> f.uri !in links && f.uri !in skip && "${f.name}.${f.ext}" !in fileNames && f.name !in names }
+    }
+
+    /** Files that had no match: looked up again a day later, not each time the app opens. */
+    private class Tried(context: Context) {
+        private val prefs = context.getSharedPreferences("found", Context.MODE_PRIVATE)
+        private val missed = prefs.getStringSet("missed", emptySet()).orEmpty().toMutableSet()
+        private var fresh = System.currentTimeMillis() - prefs.getLong("missedAt", 0) < 24 * 3600_000L
+
+        fun due(name: String) = !(fresh && name in missed)
+
+        fun missed(name: String) {
+            if (!fresh) {
+                // a new day's list
+                missed.clear()
+                fresh = true
+                prefs.edit().putLong("missedAt", System.currentTimeMillis()).apply()
+            }
+            missed += name
+            prefs.edit().putStringSet("missed", missed.toSet()).apply()
+        }
     }
 
     /** The files saved in [folder] (a MediaStore relative path). */

@@ -163,16 +163,17 @@ class App : Application(), SingletonImageLoader.Factory {
 
     /**
      * The songs saved in Music/Radiance Music back into Liked Songs (see Found): by itself
-     * at start when Liked Songs is empty ([auto]; the app was uninstalled, say), or from
-     * Settings any time.
+     * each time the app opens ([auto]; after the app was uninstalled, say), with nothing to
+     * do for you (owner, 2026-11-06: "ayaw ko na ipagawa yang mga ganyang bagay sa mga
+     * user"), or from Settings any time. Their videos then move into the app.
      */
     fun findSaved(auto: Boolean) {
         if (finding?.isActive == true) return
-        if (auto && (library.liked.value.isNotEmpty() || Import.waiting(this))) return
+        if (auto && Import.waiting(this)) return
         finding = scope.launch {
             val r = runCatching {
                 withContext(Dispatchers.IO) {
-                    Found.run(this@App, library) { done, of -> if (of > 0) _status.value = "Bringing back your saved songs · $done of $of" }
+                    Found.run(this@App, library, everything = !auto) { done, of -> if (of > 0) _status.value = "Bringing back your saved songs · $done of $of" }
                 }
             }
             _status.value = null
@@ -181,9 +182,13 @@ class App : Application(), SingletonImageLoader.Factory {
                 when {
                     of == 0 -> if (!auto) tell(Notice("All the songs in Music/Radiance Music are in Liked Songs."))
                     back == of -> tell(Notice("$back songs from Music/Radiance Music are back in Liked Songs."))
-                    else -> tell(Notice("$back of $of songs from Music/Radiance Music are back in Liked Songs. The rest come back later (Settings → Find songs saved on this phone).", Notice.retry { findSaved(false) }))
+                    auto -> if (back > 0) tell(Notice("$back songs from Music/Radiance Music are back in Liked Songs. The rest come back by themselves later."))
+                    else -> tell(Notice("$back of $of songs from Music/Radiance Music are back in Liked Songs. The rest come back by themselves later.", Notice.retry { findSaved(false) }))
                 }
-            }.onFailure { tell(Notice("Couldn't bring back your saved songs. ${Errors.say(it)}", Notice.retry { findSaved(false) })) }
+            }.onFailure {
+                android.util.Log.w("radiance-found", "couldn't bring back the saved songs", it)
+                if (!auto) tell(Notice("Couldn't bring back your saved songs. ${Errors.say(it)}", Notice.retry { findSaved(false) }))
+            }
         }
     }
 

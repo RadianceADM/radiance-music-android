@@ -58,16 +58,26 @@ class MainActivity : ComponentActivity() {
         opened(intent)
         val needed = readMediaPermissions()
         if (Import.waiting(this)) readMedia.launch(needed)
-        else if (App.instance.library.liked.value.isEmpty()) {
-            // Liked Songs empty (a new phone, or the app uninstalled and on again): the songs saved here come back
+        else if (needed.all { checkSelfPermission(it) == android.content.pm.PackageManager.PERMISSION_GRANTED }) {
+            // the songs saved here that aren't in Liked Songs come back by themselves, each time (see Found)
+            App.instance.findSaved(auto = true)
+        } else {
+            // installed again (not updated) on a phone with songs saved before: Android asks once
+            // to let it see them (a new phone with none asks nothing; the app's own files need no asking)
             val prefs = getSharedPreferences("found", MODE_PRIVATE)
-            if (needed.all { checkSelfPermission(it) == android.content.pm.PackageManager.PERMISSION_GRANTED }) App.instance.findSaved(auto = true)
-            else if (!prefs.getBoolean("asked", false)) {
+            if (!prefs.getBoolean("asked", false) && installedAgain()) {
                 prefs.edit().putBoolean("asked", true).apply()
                 readMedia.launch(needed)
             }
         }
     }
+
+    /** Installed fresh (not an update) with songs already in Music/Radiance Music: the app was here before. */
+    private fun installedAgain(): Boolean = runCatching {
+        val p = packageManager.getPackageInfo(packageName, 0)
+        p.firstInstallTime == p.lastUpdateTime &&
+            java.io.File(android.os.Environment.getExternalStorageDirectory(), "Music/Radiance Music").exists()
+    }.getOrDefault(false)
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)

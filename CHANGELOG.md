@@ -3,10 +3,14 @@
 ## 1.0.2
 
 - **Music videos are out of Gallery:** a liked song's music video used to be saved in
-  Movies/Radiance Music, so Gallery showed every one. Now they're kept inside the app. The
-  ones already saved move in by themselves, and the app asks you once before it removes their
-  old copies from Gallery. Uninstalling the app now deletes its music videos too (your songs
+  Movies/Radiance Music, so Gallery showed every one. Now they're kept inside the app, and the
+  ones already saved move in by themselves. Old copies the app didn't make itself (copied from
+  your computer, or saved before the app was installed again) need one tap: Android asks once
+  before they leave Gallery. Uninstalling the app now deletes its music videos too (your songs
   in Music/Radiance Music stay).
+- **Saved songs come back by themselves, every time:** songs saved in Music/Radiance Music
+  that aren't in Liked Songs now come back each time the app opens, not only when Liked Songs
+  is empty, with nothing for you to do. A song you unlike stays out.
 - **Watch the music video in the app:** a Video button at the top right of the song's cover
   plays its music video full screen, and the song pauses meanwhile. A video that isn't saved
   on the phone plays from YouTube.

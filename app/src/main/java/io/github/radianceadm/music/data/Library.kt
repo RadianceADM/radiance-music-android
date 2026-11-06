@@ -25,15 +25,38 @@ class Library(context: Context) {
 
     fun isLiked(key: String) = _liked.value.any { it.key == key }
 
+    /**
+     * Saved songs you unliked (their files, which stay in Music/Radiance Music): the
+     * songs saved on the phone come back by themselves (Found), but not these.
+     */
+    private var unliked: Set<String> = runCatching {
+        val a = JSONArray(File(dir, "unliked.json").readText())
+        (0 until a.length()).map { a.getString(it) }.toSet()
+    }.getOrDefault(emptySet())
+
+    fun unlikedFiles(): Set<String> = unliked
+
     fun like(t: Track) {
         if (isLiked(t.key)) return
         _liked.value = (_liked.value + t).sortedWith(byTitle)
         save("liked.json", _liked.value)
+        t.file?.let { f -> if (f in unliked) keepUnliked(unliked - f) }
     }
 
     fun unlike(t: Track) {
+        val had = _liked.value.firstOrNull { it.key == t.key }
         _liked.value = _liked.value.filterNot { it.key == t.key }
         save("liked.json", _liked.value)
+        had?.file?.let { f -> keepUnliked(unliked + f) }
+    }
+
+    private fun keepUnliked(files: Set<String>) {
+        unliked = files
+        runCatching {
+            val f = File(dir, "unliked.json.new")
+            f.writeText(JSONArray(files.toList()).toString())
+            f.renameTo(File(dir, "unliked.json"))
+        }
     }
 
     /** A liked song again, now with its saved copy (or video). */

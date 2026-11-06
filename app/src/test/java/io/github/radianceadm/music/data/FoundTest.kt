@@ -38,6 +38,23 @@ class FoundTest {
         assertNull(Found.pick(f, emptyList()))
     }
 
+    @Test fun onlySongsNotInLikedSongsComeBack() {
+        val songs = listOf(
+            Found.File("content://media/external/audio/media/1", "Maki - Dilaw", "m4a", 240), // liked: its own address
+            Found.File("content://media/external/audio/media/2", "Ben&Ben - Araw-Araw", "m4a", 250), // liked from the computer: a file:// address
+            Found.File("content://media/external/audio/media/3", "JVKE - Golden Hour", "m4a", 209), // liked, linked another way: its name
+            Found.File("content://media/external/audio/media/4", "Joji - Like You Do", "m4a", 240), // unliked
+            Found.File("content://media/external/audio/media/5", "IV OF SPADES - Mundo", "m4a", 300), // not liked: comes back
+        )
+        val liked = listOf(
+            yt("a", "Dilaw", "Maki", 240).copy(file = "content://media/external/audio/media/1"),
+            yt("b", "Araw-Araw", "Ben&Ben", 250).copy(file = "file:///storage/emulated/0/Music/Radiance Music/Ben&Ben - Araw-Araw.m4a"),
+            yt("c", "Golden Hour", "JVKE", 209).copy(file = "content://media/external/audio/media/99"),
+        )
+        val waiting = Found.waiting(songs, liked, skip = setOf("content://media/external/audio/media/4"))
+        assertEquals(listOf("IV OF SPADES - Mundo"), waiting.map { it.name })
+    }
+
     @Test fun anUnknownLengthGoesByTheName() {
         val f = Found.File("content://media/4", "IV OF SPADES - Come Inside Of My Heart", "opus", 0)
         assertEquals("k", Found.pick(f, listOf(yt("k", "Come Inside Of My Heart", "IV OF SPADES", 260)))?.id)

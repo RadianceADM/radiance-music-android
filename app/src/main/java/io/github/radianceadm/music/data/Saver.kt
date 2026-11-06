@@ -35,7 +35,8 @@ import kotlin.coroutines.resumeWithException
  * app's own folders (the video out of Gallery: see Videos).
  */
 object Saver {
-    private fun name(t: Track) = "${t.artist} - ${t.title}".map { if (it in "/\\:*?\"<>|" || it.isISOControl()) '_' else it }.joinToString("").trim().take(150)
+    /** The name a saved song's file gets ("Artist - Title"; Found reads it back). */
+    internal fun name(t: Track) = "${t.artist} - ${t.title}".map { if (it in "/\\:*?\"<>|" || it.isISOControl()) '_' else it }.joinToString("").trim().take(150)
 
     internal fun safe(key: String) = key.map { if (it.isLetterOrDigit()) it else '_' }.joinToString("")
 
