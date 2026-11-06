@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import io.github.radianceadm.music.data.Found
 import io.github.radianceadm.music.data.Import
 import io.github.radianceadm.music.data.Library
 import io.github.radianceadm.music.data.Saver
@@ -151,6 +152,33 @@ class App : Application(), SingletonImageLoader.Factory {
         scope.launch {
             val n = runCatching { saving.withLock { Import.run(this@App, library) } }
             tell(n.fold({ Notice("Your library from the computer: $it songs in Liked Songs.") }, { Notice("Couldn't read your library. ${Errors.say(it)}", Notice.retry { importLibrary() }) }))
+        }
+    }
+
+    private var finding: Job? = null
+
+    /**
+     * The songs saved in Music/Radiance Music back into Liked Songs (see Found): by itself
+     * at start when Liked Songs is empty ([auto]; the app was uninstalled, say), or from
+     * Settings any time.
+     */
+    fun findSaved(auto: Boolean) {
+        if (finding?.isActive == true) return
+        if (auto && (library.liked.value.isNotEmpty() || Import.waiting(this))) return
+        finding = scope.launch {
+            val r = runCatching {
+                withContext(Dispatchers.IO) {
+                    Found.run(this@App, library) { done, of -> if (of > 0) _status.value = "Bringing back your saved songs · $done of $of" }
+                }
+            }
+            _status.value = null
+            r.onSuccess { (back, of) ->
+                when {
+                    of == 0 -> if (!auto) tell(Notice("All the songs in Music/Radiance Music are in Liked Songs."))
+                    back == of -> tell(Notice("$back songs from Music/Radiance Music are back in Liked Songs."))
+                    else -> tell(Notice("$back of $of songs from Music/Radiance Music are back in Liked Songs. The rest come back later (Settings → Find songs saved on this phone).", Notice.retry { findSaved(false) }))
+                }
+            }.onFailure { tell(Notice("Couldn't bring back your saved songs. ${Errors.say(it)}", Notice.retry { findSaved(false) })) }
         }
     }
 

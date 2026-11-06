@@ -93,24 +93,39 @@ object Splitter {
             val total = audio.frames.toInt()
 
             val env = OrtEnvironment.getEnvironment()
-            val opts = OrtSession.SessionOptions().apply {
+            fun options(n: Int) = OrtSession.SessionOptions().apply {
                 setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
-                setIntraOpNumThreads(threads.coerceIn(1, Runtime.getRuntime().availableProcessors()))
+                setIntraOpNumThreads(n.coerceIn(1, Runtime.getRuntime().availableProcessors()))
                 setInterOpNumThreads(1)
                 addConfigEntry("session.intra_op.allow_spinning", "0") // cores rest between pieces (battery, heat)
             }
+            val opts = options(threads)
             val began = System.nanoTime()
             step("Loading the splitter", LOAD_FROM, SPLIT_FROM + 0.04f)
             val vocals = env.createSession(model(context, Model.VOCALS), opts)
             val music = try { env.createSession(model(context, Model.MUSIC), opts) } catch (e: Throwable) { vocals.close(); throw e }
             Log.i(TAG, "models loaded in ${(System.nanoTime() - began) / 1_000_000} ms, $threads threads")
 
+            // the phone warm: the same models on fewer cores, made the first time it's needed
+            val slowCores = minOf(Guard.WARM_CORES, threads)
+            var slowOpts: OrtSession.SessionOptions? = null
+            var slow: Pair<OrtSession, OrtSession>? = null
+            var warm = false
+            val models = {
+                if (!warm || slowCores >= threads) vocals to music
+                else slow ?: run {
+                    val o = options(slowCores).also { slowOpts = it }
+                    val v = env.createSession(model(context, Model.VOCALS), o)
+                    (v to try { env.createSession(model(context, Model.MUSIC), o) } catch (e: Throwable) { v.close(); throw e }).also { slow = it }
+                }
+            }
+
             val encoders = PARTS.associateWith { Pcm.Encoder(File(work, "$it.m4a"), RATE) }
             var shown = at(SPLIT_FROM)
             val skip = IntArray(PARTS.size) { delay.coerceAtLeast(0) } // the encoder's own lead-in, taken off the start
             if (delay < 0) encoders.values.forEach { it.write(FloatArray(-2 * delay), 0, -delay) }
             try {
-                Spleeter.run(env, vocals, music, x, total, { p, buf, frames ->
+                Spleeter.run(env, models, x, total, { p, buf, frames ->
                     val from = minOf(skip[p], frames)
                     skip[p] -= from
                     encoders.getValue(PARTS[p]).write(buf, 2 * from, frames - from)
@@ -118,8 +133,12 @@ object Splitter {
                     Log.i(TAG, "block $done/$of")
                     val p = SPLIT_FROM + (0.99f - SPLIT_FROM) * done / of
                     shown = at(p)
-                    step("Splitting", p, SPLIT_FROM + (0.99f - SPLIT_FROM) * minOf(done + 1, of) / of, secondsLeft + 3)
-                }, cancelled, { Guard.rest(context, { why -> say(Step(why, shown)) }, cancelled) })
+                    step(if (warm && slowCores < threads) "Splitting, slower while the phone is warm" else "Splitting", p, SPLIT_FROM + (0.99f - SPLIT_FROM) * minOf(done + 1, of) / of, secondsLeft + 3)
+                }, cancelled, {
+                    val now = Guard.rest(context, { why -> say(Step(why, shown)) }, cancelled)
+                    if (now != warm && slowCores < threads) Log.i(TAG, if (now) "the phone is warm: on $slowCores cores" else "cooler: back on $threads cores")
+                    warm = now
+                })
                 if (cancelled()) {
                     encoders.values.forEach { runCatching { it.close() } }
                     return
@@ -132,6 +151,8 @@ object Splitter {
                 vocals.close()
                 music.close()
                 opts.close()
+                slow?.let { (v, m) -> v.close(); m.close() }
+                slowOpts?.close()
             }
             Log.i(TAG, "split “${t.title}” in ${"%.0f".format((System.nanoTime() - began) / 1e9)} s")
             // both at once: a song is split, or it isn't

@@ -56,6 +56,18 @@ object Spleeter {
         block: (done: Int, of: Int, secondsLeft: Int) -> Unit = { _, _, _ -> },
         cancelled: () -> Boolean = { false },
         beforeBlock: () -> Unit = {},
+    ) = run(env, { vocals to music }, x, total, part, block, cancelled, beforeBlock)
+
+    /** As above, with the two models to use asked before each block ([models]: fewer cores while the phone is warm, say). */
+    fun run(
+        env: OrtEnvironment,
+        models: () -> Pair<OrtSession, OrtSession>,
+        x: FloatBuffer,
+        total: Int,
+        part: (index: Int, buf: FloatArray, frames: Int) -> Unit,
+        block: (done: Int, of: Int, secondsLeft: Int) -> Unit = { _, _, _ -> },
+        cancelled: () -> Boolean = { false },
+        beforeBlock: () -> Unit = {},
     ) {
         // the song padded with N samples before and N + H after (as the bench does), in frames of N every H
         val padded = total + 2 * N + H
@@ -107,6 +119,7 @@ object Spleeter {
                 }
             }
             input.rewind()
+            val (vocals, music) = models()
             val began = System.nanoTime()
             OnnxTensor.createTensor(env, input, shape).use { mag ->
                 vocals.run(mapOf("x" to mag)).use { r -> (r[0] as OnnxTensor).floatBuffer.get(yv) }

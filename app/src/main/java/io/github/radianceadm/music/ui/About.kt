@@ -76,7 +76,7 @@ import io.github.radianceadm.music.update.Updates
 
 /**
  * About Radiance Music (owner, 2026-10-31: "about page / sa android wala???"), as
- * the computer app's About: what it is, its version (an open beta), updates over
+ * the computer app's About: what it is, its version (stable since 1.0.0), updates over
  * the air, what's new, where to tell us what breaks, and who made what it uses.
  */
 @Composable
@@ -103,11 +103,11 @@ fun AboutScreen(onClose: () -> Unit) {
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Pill(version, Color.White.copy(alpha = 0.1f), Color.White)
-            Pill("Open beta", Brand.Orange.copy(alpha = 0.18f), Brand.Glow)
+            Pill("Stable", Brand.Orange.copy(alpha = 0.18f), Brand.Glow)
         }
         Text(
             "Search any song and play it, lossless first. Like it to keep it on your phone with its cover, lyrics and music video, " +
-                "and split it into drums, bass, other and vocals right here.\n\nIt's an open beta: some things may not work yet, and it changes often.",
+                "and split it into its music and its vocals right here, for karaoke.",
             color = Brand.Dim, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center,
             modifier = Modifier.padding(horizontal = 28.dp, vertical = 18.dp),
         )

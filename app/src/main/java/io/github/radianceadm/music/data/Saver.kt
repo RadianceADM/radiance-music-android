@@ -63,7 +63,7 @@ object Saver {
             }
             songSaved(out)
         }
-        runCatching { saveCover(context, out) }
+        runCatching { cover(context, out) }
         runCatching { lyrics(context, out) }
         if (out.source == Source.YOUTUBE && out.video == null) {
             runCatching { saveVideo(context, out, say) }.getOrNull()?.let { out = out.copy(video = it.toString()) }
@@ -144,7 +144,8 @@ object Saver {
 
     private fun audioOnly(f: File) = EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(f))).setRemoveVideo(true).build()
 
-    private fun saveCover(context: Context, t: Track) {
+    /** The song's cover kept here (for a liked song), if it isn't yet. */
+    fun cover(context: Context, t: Track) {
         val f = coverFile(context, t)
         if (f.exists() || t.art.isEmpty()) return
         f.parentFile?.mkdirs()

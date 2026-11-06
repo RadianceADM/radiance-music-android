@@ -131,6 +131,39 @@ object YouTube {
         return text.ifBlank { null }
     }
 
+    // ------------------------------------------------------------------ up next
+
+    /**
+     * Songs like [id], as YouTube Music plays after it (its radio for the song: the
+     * "Up next" list), the song itself left out. Owner, 2026-11-06: a song from search
+     * played the other search results next ("bakit yung nag auto queue hindi related").
+     */
+    fun related(id: String): List<Track> {
+        val context = JSONObject().put("client", JSONObject().put("clientName", "WEB_REMIX").put("clientVersion", CLIENT_VERSION).put("hl", "en"))
+        val headers = mapOf("Origin" to "https://music.youtube.com", "Referer" to "https://music.youtube.com/")
+        val body = JSONObject().put("context", context).put("videoId", id).put("playlistId", "RDAMVM$id").put("isAudioOnly", true)
+        val next = Http.postJson("https://music.youtube.com/youtubei/v1/next?prettyPrint=false", body, headers) ?: return emptyList()
+        val found = mutableListOf<Any>()
+        collect(next, "playlistPanelVideoRenderer", found)
+        return found.filterIsInstance<JSONObject>().mapNotNull { upNext(it) }.filter { it.id != id }.distinctBy { it.id }
+    }
+
+    /** One song of an "Up next" list. */
+    fun upNext(r: JSONObject): Track? {
+        val vid = r.optString("videoId").ifEmpty { return null }
+        fun runs(key: String) = r.optJSONObject(key)?.optJSONArray("runs")
+        val title = runs("title")?.optJSONObject(0)?.optString("text").orEmpty().ifEmpty { return null }
+        // "Artist • Album • 2019" (the artist's run first; more artists joined by " & " or ", ")
+        val by = runs("longBylineText") ?: runs("shortBylineText")
+        val artist = by?.let { b -> (0 until b.length()).map { b.optJSONObject(it)?.optString("text").orEmpty() }.joinToString("").split(" • ").firstOrNull() }.orEmpty()
+        val length = runs("lengthText")?.optJSONObject(0)?.optString("text").orEmpty()
+        val seconds = length.split(':').mapNotNull { it.trim().toIntOrNull() }.fold(0) { acc, n -> acc * 60 + n }
+        val thumbs = r.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+        val art = thumbs?.let { t -> (0 until t.length()).mapNotNull { t.optJSONObject(it) }.maxByOrNull { it.optInt("height") }?.optString("url") }.orEmpty()
+            .replace(Regex("=w\\d+-h\\d+"), "=w544-h544") // a bigger cover than the list's thumbnail
+        return Track(Source.YOUTUBE, vid, title, artist, seconds = seconds, art = art, format = "Opus")
+    }
+
     private fun collect(v: Any?, key: String, out: MutableList<Any>) {
         when (v) {
             is JSONObject -> v.keys().forEach { k ->

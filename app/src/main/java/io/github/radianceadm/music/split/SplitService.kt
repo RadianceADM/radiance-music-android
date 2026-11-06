@@ -51,8 +51,8 @@ class Splits(private val app: App) {
     private val prefs = app.getSharedPreferences("splitter", Context.MODE_PRIVATE)
     /** How many of the phone's cores the splitter may use. */
     var cores: Int
-        get() = prefs.getInt("cores", DEFAULT_CORES).coerceIn(1, MAX_CORES)
-        set(v) { prefs.edit().putInt("cores", v.coerceIn(1, MAX_CORES)).apply() }
+        get() = prefs.getInt(CORES, DEFAULT_CORES).coerceIn(1, MAX_CORES)
+        set(v) { prefs.edit().putInt(CORES, v.coerceIn(1, MAX_CORES)).apply() }
 
     private fun file() = File(app.filesDir, "split-queue.json")
 
@@ -101,8 +101,10 @@ class Splits(private val app: App) {
 
     companion object {
         val MAX_CORES = Runtime.getRuntime().availableProcessors()
-        /** Half the cores: quick, and the phone stays cool and smooth (its music too). */
-        val DEFAULT_CORES = (MAX_CORES / 2).coerceAtLeast(1)
+        /** Four cores (owner, 2026-11-06, non-negotiable): quick, and the phone stays cool and smooth (its music too). */
+        val DEFAULT_CORES = minOf(4, MAX_CORES)
+        /** The cores as last set (a new name with the new default, so everyone starts at four again). */
+        private const val CORES = "cores.4"
     }
 }
 

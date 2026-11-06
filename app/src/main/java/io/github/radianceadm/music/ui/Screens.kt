@@ -274,8 +274,9 @@ fun SearchScreen(pad: PaddingValues) {
                 // your liked matches first
                 val mine = liked.filter { matches(it, asked) }
                 val all = mine + list.filter { r -> mine.none { it.key == r.key } }
-                itemsIndexed(all) { i, t ->
-                    TrackRow(t, onPlay = { hub.play(all, i) }, trailing = {
+                itemsIndexed(all) { _, t ->
+                    // the song, then songs like it (not the rest of the search: owner, "hindi related")
+                    TrackRow(t, onPlay = { hub.playWithRelated(t) }, trailing = {
                         Quality(t)
                         Heart(t)
                     })

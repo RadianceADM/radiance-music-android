@@ -129,7 +129,7 @@ fun UpdateCard(
             when (state) {
                 is Updates.State.Available -> {
                     val r = state.release
-                    Head(Icons.Rounded.SystemUpdate, "Radiance Music ${r.version} is out", state.note ?: "The newest open beta.")
+                    Head(Icons.Rounded.SystemUpdate, "Radiance Music ${r.version} is out", state.note ?: "The newest version.")
                     Notes(r.notes)
                     Spacer(Modifier.height(20.dp))
                     Main(Icons.Rounded.SystemUpdate, "Update now (${mb(r.size)})") { onUpdate(r) }

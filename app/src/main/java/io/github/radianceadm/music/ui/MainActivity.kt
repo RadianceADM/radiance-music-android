@@ -45,7 +45,9 @@ import io.github.radianceadm.music.split.Setup
 
 class MainActivity : ComponentActivity() {
     // your library from the computer: read once it may be (see Import)
-    private val readMedia = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { App.instance.importLibrary() }
+    private val readMedia = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        if (Import.waiting(this)) App.instance.importLibrary() else App.instance.findSaved(auto = true)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,9 +56,16 @@ class MainActivity : ComponentActivity() {
         Setup.start(App.instance) // the splitter's model, the first time the app opens (or going on): the start screen shows it
         setContent { RadianceTheme { Radiance() } }
         opened(intent)
-        if (Import.waiting(this)) {
-            val needed = if (Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.READ_MEDIA_AUDIO, Manifest.permission.READ_MEDIA_VIDEO) else arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
-            readMedia.launch(needed)
+        val needed = readMediaPermissions()
+        if (Import.waiting(this)) readMedia.launch(needed)
+        else if (App.instance.library.liked.value.isEmpty()) {
+            // Liked Songs empty (a new phone, or the app uninstalled and on again): the songs saved here come back
+            val prefs = getSharedPreferences("found", MODE_PRIVATE)
+            if (needed.all { checkSelfPermission(it) == android.content.pm.PackageManager.PERMISSION_GRANTED }) App.instance.findSaved(auto = true)
+            else if (!prefs.getBoolean("asked", false)) {
+                prefs.edit().putBoolean("asked", true).apply()
+                readMedia.launch(needed)
+            }
         }
     }
 
@@ -171,3 +180,7 @@ private fun Radiance() {
         FeedbackPrompt(shown = !splash && !guide)
     }
 }
+
+/** What reading the songs and videos saved on this phone takes. */
+fun readMediaPermissions(): Array<String> =
+    if (Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.READ_MEDIA_AUDIO, Manifest.permission.READ_MEDIA_VIDEO) else arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)

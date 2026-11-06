@@ -1,6 +1,8 @@
 package io.github.radianceadm.music.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -25,6 +27,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.QrCode2
@@ -100,6 +103,13 @@ fun SettingsScreen(onClose: () -> Unit, onGuide: () -> Unit = {}, onOpenServer: 
                 app.shareOpen.value = App.ShareAsk(null)
             }
         }
+        SettingsGroup("Your songs") {
+            // the songs in Music/Radiance Music (they stay when the app is uninstalled; its list doesn't)
+            val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { app.findSaved(auto = false) }
+            SettingsItem(Icons.Rounded.LibraryMusic, "Find songs saved on this phone", "Songs in Music/Radiance Music that aren't in Liked Songs come back, with their covers and lyrics (after the app was uninstalled, say)") {
+                ask.launch(readMediaPermissions())
+            }
+        }
         ServersGroup(onOpen = onOpenServer, check = checkServers)
         SettingsGroup("Splitting") { Cores() }
         SettingsGroup("Look") {
@@ -111,7 +121,7 @@ fun SettingsScreen(onClose: () -> Unit, onGuide: () -> Unit = {}, onOpenServer: 
         SettingsGroup(null) {
             SettingsItem(Icons.Rounded.School, "How to use it", "The five things to know, as on the first day", arrow = true) { onGuide() }
             SettingsItem(Icons.Rounded.Star, "Rate Radiance Music", "Are you enjoying it? A few stars, and anything you'd like to tell us", arrow = true) { Feedback.openNow(context) }
-            SettingsItem(Icons.Rounded.Info, "About Radiance Music", "${Updates.current(context)}, open beta. Updates, what's new, and where to tell us what breaks", arrow = true) { about = true }
+            SettingsItem(Icons.Rounded.Info, "About Radiance Music", "Version ${Updates.current(context)}. Updates, what's new, and where to tell us what breaks", arrow = true) { about = true }
         }
     }
 }

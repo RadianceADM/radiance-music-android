@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.1
+
+- **Your saved songs come back:** uninstalling the app erases its list of liked songs, but the
+  songs themselves stay in Music/Radiance Music. When Liked Songs is empty, the app now finds
+  them and puts them back, with their music videos, covers and lyrics (it asks to see your
+  music and videos first). Any time: Settings → Find songs saved on this phone.
+- **Songs like the one you picked play next:** a song played from search is now followed by
+  songs like it, as YouTube Music plays after it, instead of the other search results.
+- **Splitting keeps going when the phone is warm:** it used to pause as soon as Android said
+  the phone was hot, which some phones say when they're only warm. Now it goes on, slower, on
+  two cores, and pauses only when the phone is really hot. Splitting uses four cores to begin
+  with (Settings → Splitting for more or fewer).
+- About no longer says "open beta": since 1.0.0 the phone app is stable.
+
 ## 1.0.0
 
 The first stable release of Radiance Music for Android.

@@ -5,19 +5,24 @@ import android.content.Context
 import android.net.Uri
 import android.os.Bundle
 import androidx.core.content.ContextCompat
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
-import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import io.github.radianceadm.music.App
 import io.github.radianceadm.music.data.Saver
+import io.github.radianceadm.music.model.Source
 import io.github.radianceadm.music.model.Track
 import io.github.radianceadm.music.server.Servers
+import io.github.radianceadm.music.source.YouTube
 import io.github.radianceadm.music.ui.Notice
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 /** A song as the player holds it (the song itself rides along in its extras). */
@@ -163,6 +168,28 @@ class PlayerHub(private val context: Context) {
         }
     }
 
+    /**
+     * [t] now, then songs like it (YouTube Music's "Up next" for it), added once they come.
+     * Owner, 2026-11-06: a song from search played the other search results next
+     * ("bakit yung nag auto queue hindi related sa previous songs").
+     */
+    fun playWithRelated(t: Track) {
+        play(listOf(t), 0)
+        App.instance.scope.launch {
+            val seed = if (t.source == Source.YOUTUBE) t.id else runCatching { YouTube.search("${t.artist} ${t.title}").firstOrNull()?.id }.getOrNull()
+            val more = seed?.let { runCatching { YouTube.related(it) }.getOrNull() }.orEmpty().filter { it.key != t.key }.take(RELATED)
+            if (more.isEmpty()) return@launch
+            withContext(Dispatchers.Main) {
+                connect {
+                    controller?.run {
+                        // only while the pick still plays (moved on: dropped); songs added meanwhile stay, these after them (owner, radiance-music#47)
+                        if (currentMediaItem?.mediaId == t.key) addMediaItems(more.map { App.instance.library.best(it).mediaItem(context) })
+                    }
+                }
+            }
+        }
+    }
+
     fun playNext(t: Track) = connect {
         controller?.run {
             if (mediaItemCount == 0) play(listOf(t), 0) else addMediaItem(currentMediaItemIndex + 1, App.instance.library.best(t).mediaItem(context))
@@ -262,5 +289,10 @@ class PlayerHub(private val context: Context) {
         val c = controller ?: return
         if (App.instance.party.joined) return // where you left off is your own music, not the party's
         App.instance.library.saveSession(_queue.value, c.currentMediaItemIndex, c.currentPosition)
+    }
+
+    private companion object {
+        /** How many songs like it come after a song from search. */
+        const val RELATED = 30
     }
 }
