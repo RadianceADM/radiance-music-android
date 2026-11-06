@@ -358,7 +358,7 @@ fun LibraryScreen(pad: PaddingValues, onSettings: () -> Unit, onParty: () -> Uni
                 )
             }
             if (liked.isEmpty()) {
-                item { Note("Like a song (the heart) and it's saved here, with its cover, lyrics and music video.") }
+                item { Note("Like a song (the heart) and it's saved here, with its cover, lyrics and music video, and split for karaoke.") }
             } else {
                 item {
                     Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {

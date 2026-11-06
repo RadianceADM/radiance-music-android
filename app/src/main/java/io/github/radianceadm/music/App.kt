@@ -94,6 +94,7 @@ class App : Application(), SingletonImageLoader.Factory {
         mixer = Mixer(this)
         splits = Splits(this)
         io.github.radianceadm.music.split.Ahead(this).start() // karaoke on: the song playing and the next one get split (android#20)
+        io.github.radianceadm.music.split.SplitLiked(this).start() // every liked song split by itself once it's saved
         share = Session(this)
         party = Party(this)
         saveMissing()
@@ -116,7 +117,11 @@ class App : Application(), SingletonImageLoader.Factory {
         scope.launch { saveOne(t) }
     }
 
-    fun unlike(t: Track) = library.unlike(t)
+    fun unlike(t: Track) {
+        library.unlike(t)
+        // not split by itself any more (the song playing with karaoke on still is: Ahead)
+        if (player.current.value?.key != t.key) splits.remove(t.key)
+    }
 
     /** Like it and wait for it to be saved (a server's song, Save): saved or not (why: told). */
     suspend fun saveLiked(t: Track): Boolean {

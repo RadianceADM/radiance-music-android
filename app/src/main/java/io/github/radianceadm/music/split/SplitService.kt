@@ -69,11 +69,29 @@ class Splits(private val app: App) {
     fun waiting(key: String) = _queue.value.any { it.key == key }
 
 
-    /** Splits [t] when its turn comes (saved first, if it isn't yet). */
-    fun add(t: Track) {
-        if (waiting(t.key) || Splitter.isSplit(app, t.key)) return
+    /** Songs that couldn't be split since the app opened: not tried again by themselves (SplitLiked) until it opens again. */
+    private val failedKeys: MutableSet<String> = java.util.Collections.synchronizedSet(mutableSetOf())
+
+    fun failed(key: String) = key in failedKeys
+
+    /**
+     * Splits [t] when its turn comes (saved first, if it isn't yet). [soon]: next, ahead of
+     * the songs waiting (the song playing with karaoke on, before the liked songs that are
+     * split by themselves); one waiting already moves up.
+     */
+    fun add(t: Track, soon: Boolean = false) {
+        if (Splitter.isSplit(app, t.key)) return
+        val list = _queue.value
+        // the one being split now stays first
+        val front = if (_now.value != null) 1 else 0
+        if (list.any { it.key == t.key }) {
+            if (!soon || list.indexOfFirst { it.key == t.key } <= front) return
+            val rest = list.filterNot { it.key == t.key }
+            save(rest.take(front) + list.first { it.key == t.key } + rest.drop(front))
+            return
+        }
         _problem.value = null
-        save(_queue.value + t)
+        save(if (soon) list.take(front) + t + list.drop(front) else list + t)
         start()
     }
 
@@ -94,7 +112,10 @@ class Splits(private val app: App) {
     internal fun report(t: Track, step: Splitter.Step?) { _now.value = step?.let { Now(t, it) } }
     internal fun finished(t: Track, problem: String?) {
         _now.value = null
-        if (problem != null) _problem.value = "Couldn't split “${t.title}”. $problem"
+        if (problem != null) {
+            _problem.value = "Couldn't split “${t.title}”. $problem"
+            failedKeys += t.key
+        }
         save(_queue.value.filterNot { it.key == t.key })
         if (problem == null) _done.value += 1
     }

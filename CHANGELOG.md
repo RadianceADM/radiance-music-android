@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.3
+
+- **Every liked song is split by itself:** like a song and, once it's saved, it's split into
+  its vocals and its music too, as its cover, lyrics and music video are, so karaoke is ready
+  whenever you want it. Songs you liked before are split the same way, one at a time in the
+  background (the song you're playing with karaoke on always goes first). Uninstalling the app
+  deletes its splits, but they come back by themselves: the songs come back, then they're
+  split again.
+
 ## 1.0.2
 
 - **Music videos are out of Gallery:** a liked song's music video used to be saved in

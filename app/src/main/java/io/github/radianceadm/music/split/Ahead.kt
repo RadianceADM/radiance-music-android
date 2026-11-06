@@ -6,6 +6,8 @@ import io.github.radianceadm.music.play.Mixer
 import io.github.radianceadm.music.server.ServerSongs
 import io.github.radianceadm.music.server.Servers
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -58,6 +60,32 @@ class Ahead(private val app: App) {
 
     private fun splitHere(t: Track) {
         if (!app.library.isLiked(t.key)) app.like(t)
-        app.splits.add(t)
+        app.splits.add(t, soon = true) // before the liked songs split by themselves (SplitLiked)
+    }
+}
+
+/**
+ * Like it, save it, split it: every liked song is split by itself once it's saved, as its
+ * cover, lyrics and video are (owner, 2026-11-06: "dapat masama den yung split files moving
+ * forwards"), so karaoke is ready whenever you want it. After the app was installed again
+ * (Android deletes its splits with it), the songs that come back are split again the same
+ * way. One at a time, behind the song playing with karaoke on (Ahead); the phone's heat is
+ * watched as for any split (Guard). A server's songs are left to that server.
+ */
+class SplitLiked(private val app: App) {
+    /** The liked songs to split now: saved here, not split or waiting, not a server's, not failed since the app opened. */
+    internal fun wanted(liked: List<Track>, ready: (Track) -> Boolean, server: (Track) -> Boolean, failed: (String) -> Boolean): List<Track> =
+        liked.filter { it.file != null && !server(it) && !failed(it.key) && !ready(it) }
+
+    /** Watches Liked Songs from now on (the app's start). */
+    fun start() {
+        app.scope.launch {
+            combine(app.library.liked, app.splits.done) { liked, _ -> liked }.collectLatest { liked ->
+                delay(1500) // Liked Songs settles first (a hundred songs coming back change it a hundred times)
+                val ready = { t: Track -> app.mixer.hasParts(t) || app.splits.waiting(t.key) || app.splits.now.value?.track?.key == t.key }
+                val todo = wanted(liked, ready, { Servers.of(it) != null }, app.splits::failed)
+                if (todo.isNotEmpty()) withContext(Dispatchers.Main) { todo.forEach { app.splits.add(it) } }
+            }
+        }
     }
 }
