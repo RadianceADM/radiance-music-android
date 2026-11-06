@@ -12,8 +12,9 @@
   that aren't in Liked Songs now come back each time the app opens, not only when Liked Songs
   is empty, with nothing for you to do. A song you unlike stays out.
 - **Watch the music video in the app:** a Video button at the top right of the song's cover
-  plays its music video full screen, and the song pauses meanwhile. A video that isn't saved
-  on the phone plays from YouTube.
+  plays its music video in the cover's place, from the same spot, without stopping, as on the
+  computer. Song goes back to the song, from where the video was. A video that isn't saved on
+  the phone plays from YouTube.
 
 ## 1.0.1
 

@@ -45,6 +45,26 @@ fun Track.mediaItem(context: Context): MediaItem {
         .build()
 }
 
+/**
+ * A song's music video as the player holds it (the Video button on its cover): the same
+ * song (its key and details, so lyrics, the heart and the queue stay as they are), played
+ * from [address]: its kept file, or "ytv:ID" for YouTube's (PlaybackService).
+ */
+fun Track.videoItem(context: Context, address: String): MediaItem {
+    val song = mediaItem(context)
+    val meta = song.mediaMetadata.buildUpon()
+        .setExtras(Bundle(song.mediaMetadata.extras ?: Bundle()).apply { putBoolean("video", true) })
+        .build()
+    return song.buildUpon()
+        .setUri(address)
+        .setMediaMetadata(meta)
+        .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(Uri.parse(address)).build())
+        .build()
+}
+
+/** It's a song's music video (see videoItem). */
+fun MediaItem.isVideo(): Boolean = mediaMetadata.extras?.getBoolean("video") == true
+
 fun trackOf(item: MediaItem): Track? = item.mediaMetadata.extras?.getString("track")?.let { runCatching { Track.fromJson(JSONObject(it)) }.getOrNull() }
 
 /**
@@ -75,6 +95,9 @@ class PlayerHub(private val context: Context) {
     /** Why the music stopped (a song that wouldn't play), until one plays again; null: all's well. */
     private val _problem = MutableStateFlow<String?>(null)
     val problem: StateFlow<String?> = _problem
+    private val _onVideo = MutableStateFlow(false)
+    /** The song playing plays as its music video now (the Video button on its cover). */
+    val onVideo: StateFlow<Boolean> = _onVideo
     /** Songs that wouldn't play, in a row (the player skips them, up to a point: PlaybackService). */
     val streak = Streak()
 
@@ -117,11 +140,13 @@ class PlayerHub(private val context: Context) {
         _queue.value = (0 until c.mediaItemCount).mapNotNull { trackOf(c.getMediaItemAt(it)) }
         _index.value = c.currentMediaItemIndex
         _current.value = c.currentMediaItem?.let { trackOf(it) }
+        _onVideo.value = c.currentMediaItem?.isVideo() == true
         val was = _playing.value
         _playing.value = c.isPlaying || (c.playWhenReady && c.playbackState == Player.STATE_BUFFERING)
         _buffering.value = c.playWhenReady && c.playbackState == Player.STATE_BUFFERING
         if (c.isPlaying) _problem.value = null
-        App.instance.mixer.songChanged(_current.value)
+        // a music video plays its own sound: the parts stand aside
+        App.instance.mixer.songChanged(if (_onVideo.value) null else _current.value)
         if (was != _playing.value) App.instance.mixer.playingChanged(_playing.value)
         _shuffle.value = c.shuffleModeEnabled
         _repeat.value = c.repeatMode
@@ -205,11 +230,6 @@ class PlayerHub(private val context: Context) {
         controller?.volume = v.coerceIn(0f, 1f)
     }
 
-    /** Paused (a music video opening over it, say); in a party, it stops listening here. */
-    fun pause() = controller?.run {
-        if (App.instance.party.joined) App.instance.party.listenHere(false) else pause()
-    }
-
     fun toggle() = controller?.run {
         // in a party: listening here or not (the party goes on)
         if (App.instance.party.joined) return@run App.instance.party.listenHere(!isPlaying)
@@ -280,6 +300,24 @@ class PlayerHub(private val context: Context) {
             Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
             else -> Player.REPEAT_MODE_OFF
         }
+    }
+
+    /**
+     * The song playing as its music video ([on], from [address]) or as the song again: from the
+     * same spot and still playing, as the computer's Video button (owner, 2026-11-06: "bakit
+     * hindi kasing smooth at nag papause pag mag siswitch between video and music").
+     */
+    fun switchVideo(on: Boolean, address: String? = null) = controller?.run {
+        if (App.instance.party.joined) return@run
+        val item = currentMediaItem ?: return@run
+        if (item.isVideo() == on) return@run
+        val t = trackOf(item) ?: return@run
+        val other = if (on) t.videoItem(context, address ?: return@run) else App.instance.library.best(t).mediaItem(context)
+        val i = currentMediaItemIndex
+        val at = currentPosition
+        replaceMediaItem(i, other)
+        seekTo(i, at)
+        if (playbackState == Player.STATE_IDLE) prepare()
     }
 
     /** A liked song saved: the queue's copy plays the file from now on. */

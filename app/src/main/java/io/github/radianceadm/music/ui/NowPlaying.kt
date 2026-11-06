@@ -155,6 +155,11 @@ import io.github.radianceadm.music.server.Servers
 import io.github.radianceadm.music.server.ServerSongs
 import io.github.radianceadm.music.play.Mixer
 import io.github.radianceadm.music.play.MusicVideo
+import io.github.radianceadm.music.play.PlaybackService
+import androidx.media3.common.VideoSize
+import androidx.media3.ui.compose.PlayerSurface
+import androidx.media3.ui.compose.SURFACE_TYPE_TEXTURE_VIEW
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
@@ -252,7 +257,17 @@ fun NowPlayingScreen(onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     // the button on the cover: only for a song with a music video (kept here, or on YouTube)
+    val onVideo by hub.onVideo.collectAsState()
     var hasVideo by remember(t?.key) { mutableStateOf(false) }
+    // its music video in the song's place, from the same spot (as on the computer)
+    val watch = { song: Track ->
+        scope.launch {
+            val address = withContext(Dispatchers.IO) { runCatching { MusicVideo.address(context, song) }.getOrNull() }
+            if (address != null) hub.switchVideo(true, address)
+            else App.instance.tell(Notice("Couldn't find “${song.title}”'s music video just now."))
+        }
+        Unit
+    }
     LaunchedEffect(t?.key) {
         hasVideo = t != null && runCatching { withContext(Dispatchers.IO) { MusicVideo.has(context, t) } }.getOrDefault(false)
     }
@@ -284,7 +299,8 @@ fun NowPlayingScreen(onClose: () -> Unit) {
                 Box(Modifier.weight(1f).fillMaxWidth()) { LyricsView(t, position, onShareLine = { sharing = listOf(it) }) }
             } else {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    SwipeCover(t, around, playing, pulled, let, watch = if (hasVideo && t != null) ({ VideoActivity.open(context, t) }) else null)
+                    if (onVideo && t != null) VideoCover(t, onSong = { hub.switchVideo(false) })
+                    else SwipeCover(t, around, playing, pulled, let, watch = if (hasVideo && t != null) ({ watch(t) }) else null)
                 }
                 Row(Modifier.padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
                     SongTitle(t, Modifier.weight(1f), small = false, note = problem)
@@ -464,21 +480,54 @@ internal fun Cover(art: String?, shape: RoundedCornerShape, modifier: Modifier, 
     Box(modifier.fillMaxSize().shadow(28.dp, shape, ambientColor = Color.Black, spotColor = Color.Black).clip(shape).background(Brand.Card), contentAlignment = Alignment.Center) {
         Icon(Icons.Rounded.MusicNote, null, tint = Brand.Dim.copy(alpha = 0.5f), modifier = Modifier.size(96.dp))
         if (!art.isNullOrEmpty()) AsyncImage(art, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-        if (watch != null) WatchButton(watch, Modifier.align(Alignment.TopEnd).padding(10.dp))
+        if (watch != null) SwitchButton(Icons.Rounded.OndemandVideo, "Video", "Watch the music video", watch, Modifier.align(Alignment.TopEnd).padding(10.dp))
     }
 }
 
-/** ▶ Video: the song's music video, full screen. */
+/**
+ * The song's music video in the cover's place, playing in the player as the song did (so
+ * the lock screen, headphones and the queue go on as before); Song goes back to the song
+ * from the same spot. Its cover shows until the first picture.
+ */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
-private fun WatchButton(onClick: () -> Unit, modifier: Modifier) {
+internal fun VideoCover(t: Track, onSong: () -> Unit) {
+    val player = PlaybackService.exo
+    var ratio by remember { mutableFloatStateOf(16f / 9f) }
+    var pictured by remember(t.key) { mutableStateOf(false) }
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onVideoSizeChanged(videoSize: VideoSize) {
+                if (videoSize.width > 0 && videoSize.height > 0) ratio = videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height
+            }
+
+            override fun onRenderedFirstFrame() {
+                pictured = true
+            }
+        }
+        player?.addListener(listener)
+        player?.videoSize?.let { listener.onVideoSizeChanged(it) }
+        onDispose { player?.removeListener(listener) }
+    }
+    val shape = RoundedCornerShape(14.dp)
+    Box(Modifier.fillMaxWidth().aspectRatio(ratio.coerceIn(0.5f, 2.4f)).shadow(28.dp, shape, ambientColor = Color.Black, spotColor = Color.Black).clip(shape).background(Color.Black)) {
+        PlayerSurface(player = player, surfaceType = SURFACE_TYPE_TEXTURE_VIEW, modifier = Modifier.fillMaxSize())
+        if (!pictured && t.art.isNotEmpty()) AsyncImage(t.art, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        SwitchButton(Icons.Rounded.MusicNote, "Song", "Back to the song", onSong, Modifier.align(Alignment.TopEnd).padding(10.dp))
+    }
+}
+
+/** ▶ Video on the cover (the song's music video), or ♪ Song on the video (back to the song). */
+@Composable
+private fun SwitchButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, description: String, onClick: () -> Unit, modifier: Modifier) {
     Row(
         modifier.clip(CircleShape).background(Color.Black.copy(alpha = 0.55f)).clickable(onClick = onClick)
-            .semantics { contentDescription = "Watch the music video" }.padding(start = 10.dp, end = 14.dp, top = 7.dp, bottom = 7.dp),
+            .semantics { contentDescription = description }.padding(start = 10.dp, end = 14.dp, top = 7.dp, bottom = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Rounded.OndemandVideo, null, tint = Color.White, modifier = Modifier.size(20.dp))
+        Icon(icon, null, tint = Color.White, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(6.dp))
-        Text("Video", color = Color.White, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        Text(label, color = Color.White, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
     }
 }
 

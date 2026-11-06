@@ -83,12 +83,6 @@
             </intent-filter>
         </service>
 
-        <!-- a song's music video, full screen (the button on its cover); it turns with the phone -->
-        <activity
-            android:name=".ui.VideoActivity"
-            android:exported="false"
-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden" />
-
         <!-- a share by QR going on with the screen off -->
         <service
             android:name=".share.ShareService"
