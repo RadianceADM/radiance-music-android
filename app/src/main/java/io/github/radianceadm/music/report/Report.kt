@@ -68,9 +68,14 @@ object Report {
         return id
     }
 
-    /** The app's own lines in Android's log (an app sees only its own), newest last. */
+    /**
+     * The app's own lines in Android's log (an app sees only its own), newest last: Info and above, as the app logs
+     * (android#30: a realme phone's screen drawing, D/BufferQueueProducer 60 times a second, filled the 4000 lines).
+     */
+    internal val LOGCAT = listOf("logcat", "-d", "-v", "time", "-t", "4000", "*:I")
+
     private fun ownLog(): String = runCatching {
-        val p = ProcessBuilder("logcat", "-d", "-v", "time", "-t", "4000").redirectErrorStream(true).start()
+        val p = ProcessBuilder(LOGCAT).redirectErrorStream(true).start()
         p.inputStream.bufferedReader().use { it.readText() }.also { p.waitFor() }
     }.getOrDefault("")
 

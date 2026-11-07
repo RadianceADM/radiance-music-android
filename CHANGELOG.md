@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.4
+
+- **Karaoke says what it's waiting for:** the first tap on the mic splits the song on your
+  phone, with a ring going round the mic. A second tap while the ring turns used to switch
+  karaoke off without a word; now it stays on and comes in by itself when the split is done.
+  When the splitter couldn't download (no internet, or the download stopped), the line under
+  the mic says so, with Try Again, and while it downloads it shows how far along it is.
+- **Report a Problem sends the app's own log:** some phones log their screen drawing many
+  times a second, which pushed every line of the app's own out of the report. Now the report
+  keeps the app's lines and leaves that chatter out.
+
 ## 1.0.3
 
 - **Every liked song is split by itself:** like a song and, once it's saved, it's split into

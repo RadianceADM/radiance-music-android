@@ -32,6 +32,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.rounded.QrCode2
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.OndemandVideo
@@ -694,7 +695,14 @@ private fun KaraokeButton(t: Track?, onAskServer: () -> Unit) {
         notesFirst { mixer.voice(Mixer.Voice.Karaoke) } // Ahead splits it
     }
     // read as it is now (the gesture below outlives this drawing)
-    val tap by rememberUpdatedState { if (mixer.voice.value == Mixer.Voice.Karaoke) mixer.voice(Mixer.Voice.Song) else turnOn() }
+    // (getting ready, a tap leaves it on and says so with a tick: android#30)
+    val tap by rememberUpdatedState {
+        when (karaokeTap(on = mixer.voice.value == Mixer.Voice.Karaoke, ready = mixer.available.value)) {
+            KaraokeTap.TurnOn -> turnOn()
+            KaraokeTap.WholeSong -> mixer.voice(Mixer.Voice.Song)
+            KaraokeTap.StaysOn -> haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        }
+    }
     val afterSlide by rememberUpdatedState { if (t != null && askServer(t)) onAskServer() }
     Box(contentAlignment = Alignment.Center) {
         Box(
@@ -839,16 +847,18 @@ private fun KaraokeStatus(t: Track) {
     val shown = rememberKaraokeProgress(t)
     val pct = "${((shown ?: 0f) * 100).toInt()} %"
     val first = queue.firstOrNull()?.key == t.key
-    val line = when {
-        here != null -> "$mode in a moment: ${here.step.what.lowercase()} · $pct"
-        fetching[t.key] != null -> "$mode in a moment: getting its parts from ${server?.name ?: "the server"} · $pct"
-        first && setup == Setup.State.Ready -> "$mode in a moment: getting ready · $pct"
-        queue.any { it.key == t.key } -> if (setup == Setup.State.Ready) "$mode once the song before it is split" else "$mode once the splitter is ready"
-        problem != null -> problem.orEmpty()
-        server != null && server.can.split && !ServerSongs.splitThere(t) -> "$mode: ask ${server.name} to split it, in the Mixer"
-        else -> "$mode: getting ready…"
+    val askServer = server?.takeIf { it.can.split && !ServerSongs.splitThere(t) }?.name
+    val line = karaokeLine(
+        mode, splitting = here?.step?.what, pct = pct, fetchingFrom = if (fetching[t.key] != null) server?.name ?: "the server" else null,
+        first = first, queued = queue.any { it.key == t.key }, setup = setup, problem = problem, askServer = askServer,
+    )
+    Text(line, color = Brand.Dim, style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center, maxLines = 3, modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp))
+    // the splitter stopped (offline, or its download failed): it can be tried again from here (android#30)
+    if (setup is Setup.State.Stopped && askServer == null) {
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            TextButton(onClick = { Setup.retry(app) }) { Labeled(Icons.Rounded.Refresh, "Try Again") }
+        }
     }
-    Text(line, color = Brand.Dim, style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center, maxLines = 2, modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp))
 }
 
 /**

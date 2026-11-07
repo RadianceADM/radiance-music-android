@@ -33,6 +33,12 @@ class ReportTest {
 
     private fun json(code: Int, body: String) = MockResponse(code, headersOf("Content-Type", "application/json"), body)
 
+    /** android#30: a realme phone logged its screen drawing (D/BufferQueueProducer) 60 times a second in the app's
+     *  process; the last 4000 lines were 16 s of that and none of the app's own (it logs at Info and above). */
+    @Test fun theLogKeepsTheAppsOwnLinesNotThePhonesChatter() {
+        assertEquals(listOf("logcat", "-d", "-v", "time", "-t", "4000", "*:I"), Report.LOGCAT)
+    }
+
     @Test fun emailAddressesAreTakenOut() {
         val s = Report.scrub("signed in as maria.cruz@example.com, then ana+music@mail.co.uk failed")
         assertFalse(s, s.contains("@"))
