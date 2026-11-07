@@ -1,5 +1,12 @@
 package io.github.radianceadm.music.ui
 
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.material.icons.rounded.AutoFixOff
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -852,14 +859,32 @@ private fun KaraokeStatus(t: Track) {
         mode, splitting = here?.step?.what, pct = pct, fetchingFrom = if (fetching[t.key] != null) server?.name ?: "the server" else null,
         first = first, queued = queue.any { it.key == t.key }, setup = setup, problem = problem, askServer = askServer,
     )
-    Text(line, color = Brand.Dim, style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center, maxLines = 3, modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp))
-    // the splitter stopped (offline, or its download failed): it can be tried again from here (android#30)
-    if (setup is Setup.State.Stopped && askServer == null) {
+    // a new message crossfades over the old (rule 16); its percent ticking on doesn't (contentKey without numbers)
+    AnimatedContent(
+        targetState = line,
+        contentKey = { it.replace(PERCENT, "") },
+        transitionSpec = { fadeIn(tween(Motion.MICRO, easing = Motion.EaseOut)) togetherWith fadeOut(tween(Motion.MICRO_OUT, easing = Motion.EaseExit)) },
+        label = "karaoke line",
+    ) { shownLine ->
+        Text(shownLine, color = Brand.Dim, style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center, maxLines = 3, modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp))
+    }
+    // the splitter stopped (offline, or its download failed): it can be tried again from here (android#30);
+    // it comes in with an ease-out and leaves a little faster (rules 1, 15), and gives under a press (rule 4)
+    AnimatedVisibility(
+        visible = setup is Setup.State.Stopped && askServer == null,
+        enter = fadeIn(tween(Motion.MICRO, easing = Motion.EaseOut)) + expandVertically(tween(Motion.MICRO, easing = Motion.EaseOut)),
+        exit = fadeOut(tween(Motion.MICRO_OUT, easing = Motion.EaseExit)) + shrinkVertically(tween(Motion.MICRO_OUT, easing = Motion.EaseExit)),
+        label = "try again",
+    ) {
+        val press = remember { MutableInteractionSource() }
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            TextButton(onClick = { Setup.retry(app) }) { Labeled(Icons.Rounded.Refresh, "Try Again") }
+            TextButton(onClick = { Setup.retry(app) }, interactionSource = press, modifier = Modifier.pressScale(press)) { Labeled(Icons.Rounded.Refresh, "Try Again") }
         }
     }
 }
+
+/** A percent in a line ("· 42 %"): the karaoke line's crossfade keys on the words without it. */
+private val PERCENT = Regex("""\d+ %""")
 
 /**
  * Not split yet: how its split here goes (one at a time, in the background),
