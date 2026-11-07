@@ -70,11 +70,25 @@ object Splitter {
      */
     data class Step(val what: String, val done: Float, val secondsLeft: Int? = null, val next: Float = done)
 
+    /** A song split ahead (not the one playing: the next one, a liked one) uses this many cores, so the music doesn't skip. */
+    const val LIGHT_CORES = 1
+
+    /**
+     * The cores a block of [threads]-core split uses (owner, 2026-11-07: "kung iisplit mo na agad ang next song yung
+     * pinaka mahinang setting lang muna pero kapag sya na ang now playing tsaka sundin ang default core count"): the
+     * song playing gets the cores set in Settings, a song split ahead [LIGHT_CORES]; while the phone is warm, at most
+     * [Guard.WARM_CORES].
+     */
+    fun cores(playing: Boolean, warm: Boolean, threads: Int): Int {
+        val base = if (playing) threads else LIGHT_CORES
+        return (if (warm) minOf(base, Guard.WARM_CORES) else base).coerceAtLeast(1)
+    }
+
     /**
      * Splits [t] (its saved file) with [threads] of the phone's cores. The
      * two parts appear only when both are done (a stopped split leaves nothing).
      */
-    fun split(context: Context, t: Track, threads: Int, say: (Step) -> Unit, cancelled: () -> Boolean, from: Float = 0f) {
+    fun split(context: Context, t: Track, threads: Int, say: (Step) -> Unit, cancelled: () -> Boolean, from: Float = 0f, playing: () -> Boolean = { true }) {
         // this split's own 0..1 on the bar after [from] (the song's download, when it waited for that)
         fun at(p: Float) = from + (1f - from) * p
         fun step(what: String, p: Float, next: Float = p, left: Int? = null) = say(Step(what, at(p), left, at(maxOf(p, next))))
@@ -86,7 +100,7 @@ object Splitter {
             val delay = Pcm.encoderDelay(context, work)
             val decoded = Pcm.decode(context, Uri.parse(song), File(work, "song.f32")) { step("Reading the song", READ_FROM + it * (RESAMPLE_FROM - READ_FROM), RESAMPLE_FROM) }
             // at the splitter's rate on all the cores it may use (the same sound, sooner)
-            val audio = Pcm.resample(decoded, RATE, File(work, "song44.f32"), threads) { step("Reading the song", RESAMPLE_FROM + it * (LOAD_FROM - RESAMPLE_FROM), LOAD_FROM) }
+            val audio = Pcm.resample(decoded, RATE, File(work, "song44.f32"), cores(playing(), false, threads)) { step("Reading the song", RESAMPLE_FROM + it * (LOAD_FROM - RESAMPLE_FROM), LOAD_FROM) }
             if (audio !== decoded) decoded.file.delete()
             if (cancelled()) return
             val x = audio.map()
@@ -99,60 +113,62 @@ object Splitter {
                 setInterOpNumThreads(1)
                 addConfigEntry("session.intra_op.allow_spinning", "0") // cores rest between pieces (battery, heat)
             }
-            val opts = options(threads)
-            val began = System.nanoTime()
-            step("Loading the splitter", LOAD_FROM, SPLIT_FROM + 0.04f)
-            val vocals = env.createSession(model(context, Model.VOCALS), opts)
-            val music = try { env.createSession(model(context, Model.MUSIC), opts) } catch (e: Throwable) { vocals.close(); throw e }
-            Log.i(TAG, "models loaded in ${(System.nanoTime() - began) / 1_000_000} ms, $threads threads")
-
-            // the phone warm: the same models on fewer cores, made the first time it's needed
-            val slowCores = minOf(Guard.WARM_CORES, threads)
-            var slowOpts: OrtSession.SessionOptions? = null
-            var slow: Pair<OrtSession, OrtSession>? = null
-            var warm = false
-            val models = {
-                if (!warm || slowCores >= threads) vocals to music
-                else slow ?: run {
-                    val o = options(slowCores).also { slowOpts = it }
-                    val v = env.createSession(model(context, Model.VOCALS), o)
-                    (v to try { env.createSession(model(context, Model.MUSIC), o) } catch (e: Throwable) { v.close(); throw e }).also { slow = it }
-                }
+            // the models on as many cores as this block wants (cores(): the song playing gets the set cores, a song
+            // split ahead one, fewer while the phone is warm), each count's pair made the first time it's needed
+            val made = HashMap<Int, Pair<OrtSession, OrtSession>>()
+            val optsMade = mutableListOf<OrtSession.SessionOptions>()
+            fun sessions(n: Int): Pair<OrtSession, OrtSession> = made.getOrPut(n) {
+                val o = options(n).also { optsMade += it }
+                val v = env.createSession(model(context, Model.VOCALS), o)
+                v to try { env.createSession(model(context, Model.MUSIC), o) } catch (e: Throwable) { v.close(); throw e }
             }
-
-            val encoders = PARTS.associateWith { Pcm.Encoder(File(work, "$it.m4a"), RATE) }
-            var shown = at(SPLIT_FROM)
-            val skip = IntArray(PARTS.size) { delay.coerceAtLeast(0) } // the encoder's own lead-in, taken off the start
-            if (delay < 0) encoders.values.forEach { it.write(FloatArray(-2 * delay), 0, -delay) }
+            val began = System.nanoTime()
+            var warm = false
+            var using = cores(playing(), warm, threads)
+            step("Loading the splitter", LOAD_FROM, SPLIT_FROM + 0.04f)
             try {
-                Spleeter.run(env, models, x, total, { p, buf, frames ->
-                    val from = minOf(skip[p], frames)
-                    skip[p] -= from
-                    encoders.getValue(PARTS[p]).write(buf, 2 * from, frames - from)
-                }, { done, of, secondsLeft ->
-                    Log.i(TAG, "block $done/$of")
-                    val p = SPLIT_FROM + (0.99f - SPLIT_FROM) * done / of
-                    shown = at(p)
-                    step(if (warm && slowCores < threads) "Splitting, slower while the phone is warm" else "Splitting", p, SPLIT_FROM + (0.99f - SPLIT_FROM) * minOf(done + 1, of) / of, secondsLeft + 3)
-                }, cancelled, {
-                    val now = Guard.rest(context, { why -> say(Step(why, shown)) }, cancelled)
-                    if (now != warm && slowCores < threads) Log.i(TAG, if (now) "the phone is warm: on $slowCores cores" else "cooler: back on $threads cores")
-                    warm = now
-                })
-                if (cancelled()) {
-                    encoders.values.forEach { runCatching { it.close() } }
-                    return
+                sessions(using)
+                Log.i(TAG, "models loaded in ${(System.nanoTime() - began) / 1_000_000} ms, $using threads")
+                val models = {
+                    val n = cores(playing(), warm, threads)
+                    if (n != using) Log.i(TAG, "on $n cores now (${if (warm) "the phone is warm" else if (playing()) "it's playing" else "split ahead"})")
+                    using = n
+                    sessions(n)
                 }
-                encoders.values.forEach { it.finish() }
-            } catch (e: Throwable) {
-                encoders.values.forEach { runCatching { it.close() } }
-                throw e
+                val encoders = PARTS.associateWith { Pcm.Encoder(File(work, "$it.m4a"), RATE) }
+                var shown = at(SPLIT_FROM)
+                val skip = IntArray(PARTS.size) { delay.coerceAtLeast(0) } // the encoder's own lead-in, taken off the start
+                if (delay < 0) encoders.values.forEach { it.write(FloatArray(-2 * delay), 0, -delay) }
+                try {
+                    Spleeter.run(env, models, x, total, { p, buf, frames ->
+                        val from = minOf(skip[p], frames)
+                        skip[p] -= from
+                        encoders.getValue(PARTS[p]).write(buf, 2 * from, frames - from)
+                    }, { done, of, secondsLeft ->
+                        Log.i(TAG, "block $done/$of")
+                        val p = SPLIT_FROM + (0.99f - SPLIT_FROM) * done / of
+                        shown = at(p)
+                        val what = when {
+                            using >= threads -> "Splitting"
+                            warm -> "Splitting, slower while the phone is warm"
+                            else -> "Splitting ahead, gently"
+                        }
+                        step(what, p, SPLIT_FROM + (0.99f - SPLIT_FROM) * minOf(done + 1, of) / of, secondsLeft + 3)
+                    }, cancelled, {
+                        warm = Guard.rest(context, { why -> say(Step(why, shown)) }, cancelled)
+                    })
+                    if (cancelled()) {
+                        encoders.values.forEach { runCatching { it.close() } }
+                        return
+                    }
+                    encoders.values.forEach { it.finish() }
+                } catch (e: Throwable) {
+                    encoders.values.forEach { runCatching { it.close() } }
+                    throw e
+                }
             } finally {
-                vocals.close()
-                music.close()
-                opts.close()
-                slow?.let { (v, m) -> v.close(); m.close() }
-                slowOpts?.close()
+                made.values.forEach { (v, m) -> v.close(); m.close() }
+                optsMade.forEach { it.close() }
             }
             Log.i(TAG, "split “${t.title}” in ${"%.0f".format((System.nanoTime() - began) / 1e9)} s")
             // both at once: a song is split, or it isn't

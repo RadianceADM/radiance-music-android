@@ -7,6 +7,10 @@
   karaoke off without a word; now it stays on and comes in by itself when the split is done.
   When the splitter couldn't download (no internet, or the download stopped), the line under
   the mic says so, with Try Again, and while it downloads it shows how far along it is.
+- **Music keeps playing smoothly while songs are split ahead:** the next song (and your liked
+  songs, in the background) is now split on one core only, so the phone isn't busy enough to
+  make the music skip. When that song starts playing, its split speeds up to the cores set in
+  Settings.
 - **Report a Problem sends the app's own log:** some phones log their screen drawing many
   times a second, which pushed every line of the app's own out of the report. Now the report
   keeps the app's lines and leaves that chatter out.

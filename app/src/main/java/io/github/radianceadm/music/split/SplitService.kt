@@ -198,7 +198,7 @@ class SplitService : Service() {
                             last = now
                             notes.notify(NOTE, note("Splitting “${t.title}”", listOfNotNull(step.what.takeIf { it != "Splitting" }, "${(step.done * 100).toInt()} %", step.secondsLeft?.let { left(it) }).joinToString(" · "), step.done))
                         }
-                    }, { splits.stopAsked }, if (downloaded) DOWNLOAD_SHARE else 0f)
+                    }, { splits.stopAsked }, if (downloaded) DOWNLOAD_SHARE else 0f, playing = { app.player.current.value?.key == t.key })
                 } catch (e: Throwable) {
                     Log.e("radiance-split", "split failed", e)
                     problem = Errors.say(e, offline = false) // in plain words (the log has the rest)
