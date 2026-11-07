@@ -37,8 +37,12 @@ import java.util.concurrent.TimeUnit
  */
 object Wire {
     const val VERSION = 1
-    /** What a song can come with: the song itself, its four parts or its two halves (music + vocals), lyrics, cover, music video. */
-    val KINDS = listOf("song", "drums", "bass", "other", "vocals", "music", "lyrics", "cover", "video")
+    /**
+     * What a song can come with: the song itself, its four parts or its two halves (music + vocals), lyrics, cover.
+     * Never a music video (owner, 2026-11-08: "final na walang music video sa mobile"): one offered by a computer or
+     * an older phone is left off the list, so it's never asked for and never taken.
+     */
+    val KINDS = listOf("song", "drums", "bass", "other", "vocals", "music", "lyrics", "cover")
     /** Bigger than any song or video would be: refused. */
     const val MOST_BYTES = 4L shl 30
 

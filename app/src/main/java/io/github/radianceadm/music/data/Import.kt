@@ -13,8 +13,8 @@ import java.io.File
 
 /**
  * Your library from the computer (Radiance Music for Linux), copied onto the
- * phone: the songs in Music/Radiance Music, their videos in Movies/Radiance
- * Music, and in the app's own folder (Library/) a list of them (library.json)
+ * phone: the songs in Music/Radiance Music, and in the app's own folder
+ * (Library/) a list of them (library.json)
  * with their parts (drums, bass, other, vocals), lyrics and covers. Read once:
  * each song joins Liked Songs, playing its own file, with its lyrics and cover.
  */
@@ -48,15 +48,14 @@ object Import {
         val l = list(context)
         val songs = JSONObject(l.readText()).getJSONArray("songs")
         val music = File(Environment.getExternalStorageDirectory(), "Music/Radiance Music")
-        val movies = File(Environment.getExternalStorageDirectory(), "Movies/Radiance Music")
         var n = 0
         for (i in 0 until songs.length()) {
             val e = songs.getJSONObject(i)
             val base = Track.fromJson(e.getJSONObject("track")) ?: continue
             val song = File(music, e.optString("song"))
             if (!song.exists()) continue
-            val video = e.optString("video").takeIf { it.isNotEmpty() }?.let { File(movies, it) }?.takeIf { it.exists() }
-            val t = base.copy(file = "file://${song.absolutePath}", video = video?.let { "file://${it.absolutePath}" })
+            // its music video (if the computer copied one) stays out: phones have none (android#32)
+            val t = base.copy(file = "file://${song.absolutePath}")
             // its cover and its lyrics where the app keeps them
             e.optString("cover").takeIf { it.isNotEmpty() }?.let { File(dir(context), it) }?.takeIf { it.exists() }?.let { c ->
                 Saver.coverFile(context, t).apply { parentFile?.mkdirs() }.let { c.copyTo(it, overwrite = true) }

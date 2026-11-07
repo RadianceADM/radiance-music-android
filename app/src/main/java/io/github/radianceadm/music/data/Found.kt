@@ -10,8 +10,7 @@ import io.github.radianceadm.music.source.YouTube
 import kotlin.math.abs
 
 /**
- * Songs already saved on this phone (Music/Radiance Music, their videos in
- * Movies/Radiance Music) back into Liked Songs: the app was uninstalled and
+ * Songs already saved on this phone (Music/Radiance Music) back into Liked Songs: the app was uninstalled and
  * its list went with it, but the songs stayed (owner, 2026-11-06: "bakit
  * nawala yung mga liked music ko? inuninstall ko"). Each file is matched to
  * its song on YouTube Music by its name ("Artist - Title", as Saver names it)
@@ -32,7 +31,6 @@ object Found {
      */
     fun run(context: Context, library: Library, everything: Boolean = false, say: (Int, Int) -> Unit): Pair<Int, Int> {
         val songs = files(context, MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, "Music/Radiance Music")
-        val videos = files(context, MediaStore.Video.Media.EXTERNAL_CONTENT_URI, "Movies/Radiance Music").associateBy { it.name }
         val liked = library.liked.value
         val skip = library.unlikedFiles()
         val tried = Tried(context)
@@ -51,7 +49,6 @@ object Found {
             }
             val t = found.copy(
                 file = f.uri,
-                video = videos[f.name]?.uri,
                 format = if (f.ext.equals("flac", true)) "FLAC" else found.format,
             )
             if (library.isLiked(t.key)) library.update(t) else library.like(t)

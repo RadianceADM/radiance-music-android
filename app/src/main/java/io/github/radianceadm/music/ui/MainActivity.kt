@@ -188,11 +188,9 @@ private fun Radiance() {
         UpdatePrompt(shown = !splash && !guide)
         // now and then, at a free moment: are you enjoying it? (never over the splash or the guide)
         FeedbackPrompt(shown = !splash && !guide)
-        // the music videos moved into the app: their old copies out of Gallery, asked once (android#26)
-        OldVideosPrompt(shown = !splash && !guide)
     }
 }
 
-/** What reading the songs and videos saved on this phone takes. */
+/** What reading the songs saved on this phone takes (no videos: android#32). */
 fun readMediaPermissions(): Array<String> =
-    if (Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.READ_MEDIA_AUDIO, Manifest.permission.READ_MEDIA_VIDEO) else arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+    if (Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.READ_MEDIA_AUDIO) else arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)

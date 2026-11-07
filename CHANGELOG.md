@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.5
+
+- **No music videos on the phone:** Radiance Music on your phone is for songs. Liking a song
+  saves the song, its cover and its lyrics, and it's split for karaoke, but no music video.
+  Now Playing has no Video button, and songs shared from the computer or another phone come
+  without videos. The music videos kept from before are deleted by the update itself, so
+  their space is free again. Story videos for Instagram and Facebook are still there.
+
 ## 1.0.4
 
 - **Karaoke says what it's waiting for:** the first tap on the mic splits the song on your

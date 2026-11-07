@@ -4,28 +4,33 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.io.File
+import java.nio.file.Files
 
+/** No music videos on the phone (owner, 2026-11-08, android#32): the ones it kept go by themselves. */
 class VideosTest {
-    private val dir = File("/data/user/0/io.github.radianceadm.music/no_backup/videos")
+    private val root = Files.createTempDirectory("videos-test").toFile()
 
-    @Test fun aSongsVideoIsNamedByItsKey() {
-        assertEquals(File(dir, "yt_dQw4w9WgXcQ.mp4"), Videos.fileIn(dir, "yt:dQw4w9WgXcQ"))
-        // one sent from the computer keeps its own kind
-        assertEquals(File(dir, "yt_abc.mkv"), Videos.fileIn(dir, "yt:abc", "mkv"))
-        assertEquals(File(dir, "yt_abc.mp4"), Videos.fileIn(dir, "yt:abc", ""))
+    @Test fun keptVideosAreDeletedByThemselves() {
+        val videos = root.resolve("no_backup/videos").apply { mkdirs() }
+        videos.resolve("yt_abc.mp4").writeBytes(ByteArray(1000))
+        videos.resolve("yt_def.mkv.part").writeBytes(ByteArray(200)) // half-written when the app closed
+        val cache = root.resolve("cache").apply { mkdirs() }
+        cache.resolve("video-yt_abc").apply { mkdirs() }.resolve("picture.mp4").writeBytes(ByteArray(300))
+        // a story video (the share clip) and a song being saved aren't music videos: they stay
+        cache.resolve("share/video").apply { mkdirs() }.resolve("story.mp4").writeBytes(ByteArray(50))
+        cache.resolve("song-yt_abc").apply { mkdirs() }.resolve("song.opus").writeBytes(ByteArray(40))
+
+        assertEquals(1500L, Videos.forget(videos, cache))
+
+        assertFalse(videos.exists())
+        assertFalse(cache.resolve("video-yt_abc").exists())
+        assertTrue(cache.resolve("share/video/story.mp4").exists())
+        assertTrue(cache.resolve("song-yt_abc/song.opus").exists())
+        root.deleteRecursively()
     }
 
-    @Test fun aKeptVideoIsInTheAppsFolder() {
-        val f = Videos.fileIn(dir, "yt:abc")
-        assertTrue(Videos.inApp(dir, Videos.address(f)))
-    }
-
-    @Test fun videosFromBeforeAreNotInTheApp() {
-        // saved in Movies/Radiance Music before 1.0.2: Gallery shows those
-        assertFalse(Videos.inApp(dir, "content://media/external/video/media/1234"))
-        assertFalse(Videos.inApp(dir, "file:///storage/emulated/0/Movies/Radiance Music/Maki - Dilaw.mp4"))
-        // a folder whose name only starts the same isn't it
-        assertFalse(Videos.inApp(dir, "file:///data/user/0/io.github.radianceadm.music/no_backup/videos-old/yt_abc.mp4"))
+    @Test fun nothingKeptIsNothingToDo() {
+        assertEquals(0L, Videos.forget(root.resolve("no_backup/videos"), root.resolve("cache")))
+        root.deleteRecursively()
     }
 }

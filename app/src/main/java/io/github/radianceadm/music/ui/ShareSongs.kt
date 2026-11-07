@@ -61,7 +61,7 @@ import io.github.radianceadm.music.share.ShareService
 
 /**
  * Songs to another phone or the computer, by QR: Send shows a QR for the
- * songs (with their parts, lyrics, cover, and videos if you like); Scan reads
+ * songs (with their parts, lyrics and cover; no music videos); Scan reads
  * another's QR, to take its songs or to send yours. Nothing the other side
  * has already is sent again.
  */
@@ -108,11 +108,10 @@ private fun Start(songs: List<Track>?, scan: Boolean) {
     val context = LocalContext.current
     val liked by app.library.liked.collectAsState()
     var scanning by remember { mutableStateOf(scan) }
-    var videos by remember { mutableStateOf(false) }
     var direct by remember { mutableStateOf(true) }
     val all = (songs ?: liked).filter { it.file != null }
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
-        share.send(all, videos, describe(songs, all.size), direct && ok)
+        share.send(all, describe(songs, all.size), direct && ok)
     }
     if (scanning) {
         Title("Scan a QR", "From Radiance Music on another phone or the computer (Share songs there).")
@@ -123,13 +122,12 @@ private fun Start(songs: List<Track>?, scan: Boolean) {
     }
     Title("Share songs", "Straight to another phone or the computer, with their parts: nothing to download or split there. What it has already isn't sent again.")
     Choice(Icons.Rounded.QrCode2, "Send ${describe(songs, all.size)}", "Shows a QR. The other phone scans it and takes them.", null)
-    Toggle("With music videos", "Bigger: each about 30 to 60 MB", videos) { videos = it }
     Toggle("Also without Wi-Fi", "The other phone can join this phone's own Wi-Fi network", direct) { direct = it }
     Gap(6.dp)
     Button(
         onClick = {
             val granted = ContextCompat.checkSelfPermission(context, directPermission()) == PackageManager.PERMISSION_GRANTED
-            if (direct && !granted) ask.launch(directPermission()) else share.send(all, videos, describe(songs, all.size), direct)
+            if (direct && !granted) ask.launch(directPermission()) else share.send(all, describe(songs, all.size), direct)
         },
         enabled = all.isNotEmpty(),
         colors = ButtonDefaults.buttonColors(containerColor = Brand.Orange),
@@ -201,13 +199,11 @@ private fun Showing(s: Session.State.Showing, onStop: () -> Unit) {
 private fun Choose(s: Session.State.Choose) {
     val app = App.instance
     val liked by app.library.liked.collectAsState()
-    var videos by remember { mutableStateOf(false) }
     val all = liked.filter { it.file != null }
     Title("${s.ticket.name} asks for songs", "Send it your Liked Songs (${all.size}). It takes only what it hasn't got.")
-    Toggle("With music videos", "Bigger: each about 30 to 60 MB", videos) { videos = it }
     Gap(8.dp)
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Button(onClick = { app.share.sendTo(s.ticket, all, videos) }, enabled = all.isNotEmpty(), colors = ButtonDefaults.buttonColors(containerColor = Brand.Orange)) { Labeled(Icons.AutoMirrored.Rounded.Send, "Send") }
+        Button(onClick = { app.share.sendTo(s.ticket, all) }, enabled = all.isNotEmpty(), colors = ButtonDefaults.buttonColors(containerColor = Brand.Orange)) { Labeled(Icons.AutoMirrored.Rounded.Send, "Send") }
         FilledTonalButton(onClick = { app.share.close() }) { Labeled(Icons.Rounded.Close, "Cancel") }
     }
 }

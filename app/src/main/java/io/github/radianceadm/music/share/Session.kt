@@ -72,9 +72,9 @@ class Session(private val app: App) {
 
     private fun name() = android.provider.Settings.Global.getString(app.contentResolver, "device_name") ?: android.os.Build.MODEL
 
-    /** Shows a QR for [songs] (with their videos if [videos]): the phone scanning it takes what it hasn't got. */
-    fun send(songs: List<Track>, videos: Boolean, what: String, direct: Boolean) {
-        val offer = PhoneShare.Offer(app, songs, videos)
+    /** Shows a QR for [songs]: the phone scanning it takes what it hasn't got. */
+    fun send(songs: List<Track>, what: String, direct: Boolean) {
+        val offer = PhoneShare.Offer(app, songs)
         open("get", offer, null, what, direct)
     }
 
@@ -128,7 +128,7 @@ class Session(private val app: App) {
     }
 
     /** Sends [songs] to the device whose QR asked for them. */
-    fun sendTo(t: Wire.Ticket, songs: List<Track>, videos: Boolean) = connect(t, PhoneShare.Offer(app, songs, videos))
+    fun sendTo(t: Wire.Ticket, songs: List<Track>) = connect(t, PhoneShare.Offer(app, songs))
 
     private fun connect(t: Wire.Ticket, offer: Wire.Offer?) {
         close()

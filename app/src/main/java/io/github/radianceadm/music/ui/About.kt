@@ -106,7 +106,7 @@ fun AboutScreen(onClose: () -> Unit) {
             Pill("Stable", Brand.Orange.copy(alpha = 0.18f), Brand.Glow)
         }
         Text(
-            "Search any song and play it, lossless first. Like it to keep it on your phone with its cover, lyrics and music video, " +
+            "Search any song and play it, lossless first. Like it to keep it on your phone with its cover and lyrics, " +
                 "and split it into its music and its vocals right here, for karaoke.",
             color = Brand.Dim, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center,
             modifier = Modifier.padding(horizontal = 28.dp, vertical = 18.dp),

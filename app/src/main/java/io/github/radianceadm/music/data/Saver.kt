@@ -30,9 +30,9 @@ import kotlin.coroutines.resumeWithException
 
 /**
  * Like it, save it: a liked song goes into Music/Radiance Music (Opus from
- * YouTube, FLAC from the Internet Archive); its music video (720p, picture
- * and sound joined without re-encoding), its cover and its lyrics into the
- * app's own folders (the video out of Gallery: see Videos).
+ * YouTube, FLAC from the Internet Archive); its cover and its lyrics into the
+ * app's own folders. Never its music video: phones have none (owner,
+ * 2026-11-08, android#32; see Videos).
  */
 object Saver {
     /** The name a saved song's file gets ("Artist - Title"; Found reads it back). */
@@ -49,7 +49,7 @@ object Saver {
 
     /**
      * Saves what the song still lacks (worker thread; a minute or two). The song with its files.
-     * [songSaved]: the song itself is here (before its cover, lyrics and video), so a split
+     * [songSaved]: the song itself is here (before its cover and lyrics), so a split
      * waiting for it starts at once.
      */
     suspend fun save(context: Context, t: Track, say: (String) -> Unit = {}, songSaved: (Track) -> Unit = {}): Track = withContext(Dispatchers.IO) {
@@ -66,9 +66,6 @@ object Saver {
         }
         runCatching { cover(context, out) }
         runCatching { lyrics(context, out) }
-        if (out.source == Source.YOUTUBE && out.video == null) {
-            runCatching { saveVideo(context, out, say) }.getOrNull()?.let { out = out.copy(video = it) }
-        }
         out
     }
 
@@ -126,10 +123,6 @@ object Saver {
     fun keepSong(context: Context, display: String, mime: String, write: (java.io.OutputStream) -> Unit): Uri =
         keep(context, MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), display, mime, "Music/Radiance Music", write)
 
-    /** A music video that came from another device, kept for the song [key] in the app's folder. Its address. */
-    fun keepVideo(context: Context, key: String, ext: String, write: (java.io.OutputStream) -> Unit): String =
-        Videos.keep(context, key, ext, write)
-
     /** A new file in [folder], written by [write]; a half-written one isn't kept. */
     private fun keep(context: Context, collection: Uri, display: String, mime: String, folder: String, write: (java.io.OutputStream) -> Unit): Uri {
         val uri = insert(context, collection, display, mime, folder)
@@ -166,37 +159,6 @@ object Saver {
             f.writeText(text)
         }
         return found
-    }
-
-    private suspend fun saveVideo(context: Context, t: Track, say: (String) -> Unit): String? {
-        // liked before (and unliked): its video is still here
-        Videos.kept(context, t.key)?.let { return Videos.address(it) }
-        val video = YouTube.counterpart(t) ?: return null
-        say("Saving “${t.title}”'s music video…")
-        val cache = File(context.cacheDir, "video-${safe(t.key)}").apply { mkdirs() }
-        try {
-            val joined = File(cache, "joined.mp4")
-            val parts = YouTube.videoParts(video.id)
-            if (parts != null) {
-                val (picture, sound) = parts
-                val (p, s) = File(cache, "picture.mp4") to File(cache, "sound.m4a")
-                p.outputStream().use { Http.download(picture.url, it, picture.size) }
-                s.outputStream().use { Http.download(sound.url, it, sound.size) }
-                join(context, p, s, joined)
-            } else {
-                val one = YouTube.videoWithSound(video.id) ?: return null
-                joined.outputStream().use { Http.download(one.url, it, one.size) }
-            }
-            return Videos.put(context, t.key, joined)
-        } finally {
-            cache.deleteRecursively()
-        }
-    }
-
-    /** The picture and the sound in one MP4, copied as they are (no re-encoding). */
-    private suspend fun join(context: Context, picture: File, sound: File, out: File) {
-        val v = EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(picture))).setRemoveAudio(true).build()
-        export(context, Composition.Builder(EditedMediaItemSequence.Builder(v).build(), EditedMediaItemSequence.Builder(audioOnly(sound)).build()).build(), out)
     }
 
     /** Writes [composition] to [out] (an MP4), copying the streams as they are when it can. */

@@ -63,6 +63,27 @@ class WireTest {
         assertEquals(expected, last!!.bytes)
     }
 
+    /** A computer (or a phone before 1.0.5) offering a song's music video: the phone never asks for it (android#32). */
+    @Test fun aMusicVideoOnOfferIsNeverTaken() {
+        val withVideo = mapOf("yt:V" to mapOf("song" to bytes(200_000, 8), "video" to bytes(500_000, 9)))
+        val old = object : Wire.Offer {
+            override fun items() = withVideo.map { (key, files) ->
+                Wire.Item(key, JSONObject().put("title", "Song $key"), files.mapValues { (kind, b) -> Wire.FileInfo("$key.$kind", b.size.toLong()) })
+            }
+            override fun open(key: String, kind: String): InputStream? = withVideo[key]?.get(kind)?.inputStream()
+        }
+        val server = Wire.Server("get", old, null, InetAddress.getLoopbackAddress()).start()
+        val store = Store(emptyMap())
+        var last: Wire.Progress? = null
+        Wire.pull("http://127.0.0.1:${server.port}", server.key, store) { last = it }
+        server.close()
+        assertEquals(listOf("yt:V"), store.done)
+        assertEquals(setOf("yt:V" to "song"), store.got.keys)
+        assertEquals(200_000L, last!!.totalBytes)
+        val listed = Wire.Item.fromJson(JSONObject().put("key", "yt:V").put("files", JSONObject().put("video", JSONObject().put("name", "v.mp4").put("size", 5))))
+        assertTrue("a video isn't on the phone's list", listed!!.files.isEmpty())
+    }
+
     @Test fun pushSendsOnlyWhatsMissing() {
         val store = Store(mapOf("yt:B" to setOf("song"), "yt:A" to setOf("drums", "bass", "other", "vocals")))
         val server = Wire.Server("put", null, store, InetAddress.getLoopbackAddress()).start()

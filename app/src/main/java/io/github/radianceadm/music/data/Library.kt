@@ -59,7 +59,7 @@ class Library(context: Context) {
         }
     }
 
-    /** A liked song again, now with its saved copy (or video). */
+    /** A liked song again, now with its saved copy. */
     fun update(t: Track) {
         if (!isLiked(t.key)) return
         _liked.value = _liked.value.map { if (it.key == t.key) t else it }

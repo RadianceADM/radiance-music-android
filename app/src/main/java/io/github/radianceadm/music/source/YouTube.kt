@@ -2,8 +2,6 @@ package io.github.radianceadm.music.source
 
 import io.github.radianceadm.music.model.Source
 import io.github.radianceadm.music.model.Track
-import io.github.radianceadm.music.model.plain
-import io.github.radianceadm.music.model.splitCredit
 import io.github.radianceadm.music.net.Http
 import io.github.radianceadm.music.net.fail
 import org.json.JSONArray
@@ -16,7 +14,6 @@ import org.schabi.newpipe.extractor.stream.AudioStream
 import org.schabi.newpipe.extractor.stream.DeliveryMethod
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
-import org.schabi.newpipe.extractor.stream.VideoStream
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -27,10 +24,9 @@ import java.util.concurrent.ConcurrentHashMap
 object YouTube {
     private val yt get() = ServiceList.YouTube
 
-    /** Songs (or music videos) for [query]. */
-    fun search(query: String, videos: Boolean = false): List<Track> {
-        val filter = if (videos) YoutubeSearchQueryHandlerFactory.MUSIC_VIDEOS else YoutubeSearchQueryHandlerFactory.MUSIC_SONGS
-        val ex = yt.getSearchExtractor(query, listOf(filter), "")
+    /** Songs for [query] (never music videos: phones have none, android#32). */
+    fun search(query: String): List<Track> {
+        val ex = yt.getSearchExtractor(query, listOf(YoutubeSearchQueryHandlerFactory.MUSIC_SONGS), "")
         ex.fetchPage()
         return ex.initialPage.items.filterIsInstance<StreamInfoItem>().mapNotNull { item ->
             val id = runCatching { YoutubeStreamLinkHandlerFactory.getInstance().getId(item.url) }.getOrNull() ?: return@mapNotNull null
@@ -79,37 +75,6 @@ object YouTube {
 
     /** The AAC sound (for saving where Opus can't be moved into an MP4). */
     fun aac(id: String): Stream? = infoOf(id).audioStreams.filter { it.plainHttp() && it.format == MediaFormat.M4A }.maxByOrNull { it.averageBitrate }?.asStream()
-
-    /** For a music video saved as one file: its picture (H.264, up to 720p) and AAC sound. */
-    fun videoParts(id: String): Pair<Stream, Stream>? {
-        val i = infoOf(id)
-        val picture = i.videoOnlyStreams
-            .filter { it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.isUrl && it.format == MediaFormat.MPEG_4 && it.codec.orEmpty().startsWith("avc1") }
-            .filter { height(it) in 1..720 }
-            .maxByOrNull { height(it) } ?: return null
-        val sound = i.audioStreams.filter { it.plainHttp() && it.format == MediaFormat.M4A }.maxByOrNull { it.averageBitrate } ?: return null
-        return Stream(picture.content, "video/mp4", "mp4", picture.itagItem?.contentLength?.takeIf { it > 0 }, height(picture)) to sound.asStream()
-    }
-
-    /** The best video with its sound in one stream (YouTube keeps these to 360p): the fallback. */
-    fun videoWithSound(id: String): Stream? = infoOf(id).videoStreams
-        .filter { it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.isUrl && it.format == MediaFormat.MPEG_4 }
-        .maxByOrNull { height(it) }
-        ?.let { Stream(it.content, "video/mp4", "mp4", it.itagItem?.contentLength?.takeIf { n -> n > 0 }, height(it)) }
-
-    private fun height(v: VideoStream): Int = v.resolution.orEmpty().takeWhile { it.isDigit() }.toIntOrNull() ?: v.height
-
-    /** The song's official music video (or, for a video, its song): same title, same artist. */
-    fun counterpart(t: Track): Track? {
-        val artist = splitCredit(t.artist).firstOrNull().orEmpty()
-        val (a, title) = plain(artist) to plain(t.title)
-        if (a.isEmpty() || title.isEmpty()) return null
-        val found = runCatching { search("$artist ${t.title}", videos = true) }.getOrDefault(emptyList())
-        return found.firstOrNull { c ->
-            val ct = plain(c.title)
-            c.id != t.id && ct.contains(title) && plain("${c.artist} ${c.title}").contains(a)
-        }
-    }
 
     // ------------------------------------------------------------------ lyrics
 

@@ -68,10 +68,6 @@ class ScreensTest {
     @Config(qualifiers = "w360dp-h780dp-xxhdpi", fontScale = 2.0f)
     @Test fun homeLargestFont() { songs(); shot("home-largest-font") { HomeScreen(PaddingValues(), onSearch = {}, onSettings = {}) } }
     @Test fun nowPlaying() = shot("now-playing") { NowPlayingScreen(onClose = {}) }
-    // the music video's button at the top right of the cover (android#26)
-    // the music video in the cover's place, with Song to go back (no player here: its cover shows)
-    @Test fun videoCover() = shot("video-cover") { Box(Modifier.padding(26.dp)) { VideoCover(Track(Source.YOUTUBE, "test", "Golden Hour", "JVKE", seconds = 209), onSong = {}) } }
-    @Test fun coverWithVideo() = shot("cover-video") { Box(Modifier.padding(26.dp).size(360.dp)) { Cover(null, androidx.compose.foundation.shape.RoundedCornerShape(14.dp), Modifier, watch = {}) } }
     @Test fun lyricPicker() = shot("lyric-picker") {
         val lines = listOf("I'm in the mood for dancing", "Romancing, ooh", "Give it up, it's a beautiful night", "So I'm dancing with my baby", "And it feels so right", "Under the stars, under the lights", "We're never going home tonight")
             .map { Pick(it, null) }

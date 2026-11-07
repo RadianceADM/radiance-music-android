@@ -20,9 +20,6 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import androidx.media3.exoplayer.source.MediaSource
-import androidx.media3.exoplayer.source.MergingMediaSource
-import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.google.common.util.concurrent.Futures
@@ -54,26 +51,11 @@ class PlaybackService : MediaSessionService() {
         val resolving = ResolvingDataSource.Factory(upstream) { spec ->
             when (spec.uri.scheme) {
                 "yt" -> spec.withUri(Uri.parse(YouTube.audio(spec.uri.schemeSpecificPart).url))
-                // a music video from YouTube: its picture and its sound (found when it starts, as a song's)
-                "ytvp" -> spec.withUri(Uri.parse(MusicVideo.parts(spec.uri.schemeSpecificPart).first.url))
-                "ytvs" -> spec.withUri(Uri.parse(MusicVideo.parts(spec.uri.schemeSpecificPart).second.url))
                 else -> Servers.sign(spec.uri.toString()).let { signed -> if (signed == spec.uri.toString()) spec else spec.withUri(Uri.parse(signed)) }
             }
         }
-        // "ytv:ID", a music video from YouTube: its picture and its sound played together
-        val songs = DefaultMediaSourceFactory(resolving)
-        val sources = object : MediaSource.Factory by songs {
-            override fun createMediaSource(mediaItem: MediaItem): MediaSource {
-                val uri = mediaItem.localConfiguration?.uri
-                if (uri?.scheme != "ytv") return songs.createMediaSource(mediaItem)
-                val id = uri.schemeSpecificPart
-                val web = ProgressiveMediaSource.Factory(resolving)
-                return MergingMediaSource(
-                    web.createMediaSource(mediaItem.buildUpon().setUri("ytvp:$id").build()),
-                    web.createMediaSource(MediaItem.fromUri("ytvs:$id")),
-                )
-            }
-        }
+        // songs only: phones have no music videos (owner, 2026-11-08, android#32)
+        val sources = DefaultMediaSourceFactory(resolving)
         // every song it plays goes through the effects (Low cut, High cut, Reverb)
         val renderers = object : DefaultRenderersFactory(this) {
             override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioOutputPlaybackParams: Boolean): AudioSink =
@@ -101,16 +83,6 @@ class PlaybackService : MediaSessionService() {
             override fun onPlayerError(error: PlaybackException) {
                 Log.w("radiance-play", "a song wouldn't play", error)
                 val hub = App.instance.player
-                // its music video wouldn't: the song itself again, from the same spot
-                player.currentMediaItem?.takeIf { it.isVideo() }?.let { item ->
-                    val t = trackOf(item) ?: return@let
-                    val at = player.currentPosition
-                    player.replaceMediaItem(player.currentMediaItemIndex, App.instance.library.best(t).mediaItem(this@PlaybackService))
-                    player.seekTo(at)
-                    player.prepare()
-                    App.instance.tell(io.github.radianceadm.music.ui.Notice("“${t.title}”'s music video wouldn't play, so the song goes on. ${Errors.say(error)}"))
-                    return
-                }
                 val song = player.currentMediaItem?.let { trackOf(it) }
                 val then = hub.streak.failed(player.hasNextMediaItem())
                 if (then == Streak.Then.NEXT) {

@@ -21,8 +21,7 @@ data class Track(
     val format: String = "",
     /** The saved copy (a content:// address in Music/Radiance Music), once liked and saved. */
     val file: String? = null,
-    /** Its saved music video (file:// in the app's own folder; before 1.0.2, content:// in Movies/Radiance Music). */
-    val video: String? = null,
+    // no music video: phones have none (owner, 2026-11-08, android#32); an old library's "video" is left unread
 ) {
     val key: String get() = when (source) {
         Source.ARCHIVE -> "ia:$id"
@@ -41,7 +40,7 @@ data class Track(
         .put("source", when (source) { Source.ARCHIVE -> "archive"; Source.YOUTUBE -> "youtube"; Source.SERVER -> "server" })
         .put("id", id).put("title", title).put("artist", artist).put("album", album)
         .put("seconds", seconds).put("art", art).put("format", format)
-        .put("file", file ?: JSONObject.NULL).put("video", video ?: JSONObject.NULL)
+        .put("file", file ?: JSONObject.NULL)
 
     companion object {
         fun fromJson(o: JSONObject): Track? {
@@ -53,7 +52,7 @@ data class Track(
             }
             val id = o.optString("id").ifEmpty { return null }
             fun opt(k: String) = if (o.isNull(k)) null else o.optString(k).ifEmpty { null }
-            return Track(source, id, o.optString("title"), o.optString("artist"), o.optString("album"), o.optInt("seconds"), o.optString("art"), o.optString("format"), opt("file"), opt("video"))
+            return Track(source, id, o.optString("title"), o.optString("artist"), o.optString("album"), o.optInt("seconds"), o.optString("art"), o.optString("format"), opt("file"))
         }
     }
 }

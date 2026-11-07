@@ -35,8 +35,8 @@ object PhoneShare {
         if (u.scheme == "file") File(u.path!!).inputStream() else context.contentResolver.openInputStream(u)
     }.getOrNull()
 
-    /** [songs] (saved ones only), each with what it has here: the song, its parts, lyrics, cover, and its video if [videos]. */
-    class Offer(private val context: Context, songs: List<Track>, private val videos: Boolean) : Wire.Offer {
+    /** [songs] (saved ones only), each with what it has here: the song, its parts, lyrics and cover (no music videos: android#32). */
+    class Offer(private val context: Context, songs: List<Track>) : Wire.Offer {
         private val list = songs.filter { it.file != null }
         private val opens = HashMap<Pair<String, String>, () -> InputStream?>()
 
@@ -53,11 +53,8 @@ object PhoneShare {
                 }
                 Saver.lyricsFile(context, t).takeIf { it.exists() }?.let { f -> files["lyrics"] = Wire.FileInfo(f.name, f.length()); opens[t.key to "lyrics"] = { f.inputStream() } }
                 Saver.coverFile(context, t).takeIf { it.exists() }?.let { f -> files["cover"] = Wire.FileInfo(f.name, f.length()); opens[t.key to "cover"] = { f.inputStream() } }
-                if (videos) t.video?.let { v ->
-                    sizeOf(context, v)?.let { s -> files["video"] = Wire.FileInfo(nameOf(context, v) ?: "video.mp4", s); opens[t.key to "video"] = { openUri(context, v) } }
-                }
                 // its details travel, not where it sits on this phone
-                Wire.Item(t.key, t.copy(file = null, video = null).toJson(), files)
+                Wire.Item(t.key, t.copy(file = null).toJson(), files)
             }
         }
 
@@ -68,11 +65,11 @@ object PhoneShare {
         fun bytes() = made.sumOf { i -> i.files.values.sumOf { it.size } }
     }
 
-    /** Songs coming in: into Music/Radiance Music and the app's own folders (videos too), then Liked Songs. */
+    /** Songs coming in: into Music/Radiance Music and the app's own folders, then Liked Songs. A music video never comes (Wire.KINDS). */
     class Store(private val context: Context) : Wire.Store {
         private val library = App.instance.library
-        /** What each song came as so far (its file, its video). */
-        private val saved = HashMap<String, Pair<String?, String?>>()
+        /** Each song's file as it came so far. */
+        private val saved = HashMap<String, String>()
 
         /** The same song here already: the same key, or the same title by the same artist. */
         private fun mine(item: Wire.Item): Track? {
@@ -96,13 +93,12 @@ object PhoneShare {
             val t = mine(item)
             val key = t?.key ?: item.key
             if (t?.file != null && sizeOf(context, t.file) != null) here += "song"
-            else item.files["song"]?.name?.let { onPhone(it) }?.let { uri -> here += "song"; saved[item.key] = uri.toString() to saved[item.key]?.second }
+            else item.files["song"]?.name?.let { onPhone(it) }?.let { uri -> here += "song"; saved[item.key] = uri.toString() }
             here += Import.parts(context, key).keys
             val probe = Track.fromJson(item.track)?.copy() ?: return here
             val local = t ?: probe
             if (Saver.lyricsFile(context, local).exists()) here += "lyrics"
             if (Saver.coverFile(context, local).exists()) here += "cover"
-            if (t?.video != null) here += "video"
             return here
         }
 
@@ -114,11 +110,7 @@ object PhoneShare {
                 "song" -> {
                     val display = safeName(name, ext.ifEmpty { "m4a" })
                     val uri = Saver.keepSong(context, display, mimeOf(ext)) { input.copyTo(it) }
-                    saved[item.key] = uri.toString() to saved[item.key]?.second
-                }
-                "video" -> {
-                    val kept = Saver.keepVideo(context, t.key, ext.ifEmpty { "mp4" }) { input.copyTo(it) }
-                    saved[item.key] = saved[item.key]?.first to kept
+                    saved[item.key] = uri.toString()
                 }
                 "lyrics" -> into(Saver.lyricsFile(context, t), input)
                 "cover" -> into(Saver.coverFile(context, t), input)
@@ -135,10 +127,10 @@ object PhoneShare {
         }
 
         override fun done(item: Wire.Item) {
-            val (song, video) = saved.remove(item.key) ?: (null to null)
+            val song = saved.remove(item.key)
             val have = mine(item)
             val base = have ?: Track.fromJson(item.track) ?: return
-            val t = base.copy(file = song ?: base.file, video = video ?: base.video)
+            val t = base.copy(file = song ?: base.file)
             if (t.file == null) return
             if (have == null) library.like(t) else library.update(t)
             App.instance.mixer.recheck()
@@ -155,9 +147,6 @@ object PhoneShare {
             "opus", "ogg", "oga" -> "audio/ogg"
             "mp3" -> "audio/mpeg"
             "wav" -> "audio/wav"
-            "mkv" -> "video/x-matroska"
-            "mp4", "m4v" -> "video/mp4"
-            "webm" -> "video/webm"
             else -> "application/octet-stream"
         }
     }
