@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -79,49 +80,52 @@ fun SettingsScreen(onClose: () -> Unit, onGuide: () -> Unit = {}, onOpenServer: 
     val context = LocalContext.current
     val app = App.instance
     val update by Updates.state.collectAsState()
-    Column(Modifier.fillMaxSize().background(Brand.Night).statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(bottom = 32.dp)) {
-        IconButton(onClick = onClose, modifier = Modifier.padding(start = 4.dp, top = 4.dp)) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", tint = Color.White) }
-        Text("Settings", style = MaterialTheme.typography.displaySmall, color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp))
-        when (val s = update) {
-            is Updates.State.Available -> SettingsGroup(null) {
-                SettingsItem(Icons.Rounded.SystemUpdate, "Radiance Music ${s.release.version} is out", "Update it here, over the air") { about = true }
+    // wider than a phone: the settings in a column in the middle, scrolling from anywhere on the screen (Fit)
+    Column(Modifier.fillMaxSize().background(Brand.Night).statusBarsPadding().navigationBarsPadding().sideCutoutPadding().verticalScroll(rememberScrollState()).padding(bottom = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(Modifier.widthIn(max = Fit.COLUMN).fillMaxWidth()) {
+            IconButton(onClick = onClose, modifier = Modifier.padding(start = 4.dp, top = 4.dp)) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", tint = Color.White) }
+            Text("Settings", style = MaterialTheme.typography.displaySmall, color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp))
+            when (val s = update) {
+                is Updates.State.Available -> SettingsGroup(null) {
+                    SettingsItem(Icons.Rounded.SystemUpdate, "Radiance Music ${s.release.version} is out", "Update it here, over the air") { about = true }
+                }
+                is Updates.State.Ready -> SettingsGroup(null) {
+                    SettingsItem(Icons.Rounded.SystemUpdate, "Radiance Music ${s.release.version} is ready", "Downloaded: restart to update") { about = true }
+                }
+                else -> Unit
             }
-            is Updates.State.Ready -> SettingsGroup(null) {
-                SettingsItem(Icons.Rounded.SystemUpdate, "Radiance Music ${s.release.version} is ready", "Downloaded: restart to update") { about = true }
+            SettingsGroup("Share songs") {
+                SettingsItem(Icons.Rounded.QrCode2, "Send songs", "Shows a QR: another phone scans it and takes your songs, with their parts, lyrics and covers") {
+                    app.shareOpen.value = App.ShareAsk(null)
+                }
+                SettingsItem(Icons.Rounded.QrCodeScanner, "Get songs", "Scan the QR on another phone, or on your computer (Share Songs with a Phone there)") {
+                    app.shareOpen.value = App.ShareAsk(null, scan = true)
+                }
+                SettingsItem(Icons.Rounded.Download, "Receive songs here", "Shows a QR for another phone or your computer to send songs to this one, on the same Wi-Fi") {
+                    app.share.receive(direct = false)
+                    app.shareOpen.value = App.ShareAsk(null)
+                }
             }
-            else -> Unit
-        }
-        SettingsGroup("Share songs") {
-            SettingsItem(Icons.Rounded.QrCode2, "Send songs", "Shows a QR: another phone scans it and takes your songs, with their parts, lyrics and covers") {
-                app.shareOpen.value = App.ShareAsk(null)
+            SettingsGroup("Your songs") {
+                // the songs in Music/Radiance Music (they stay when the app is uninstalled; its list doesn't)
+                val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { app.findSaved(auto = false) }
+                SettingsItem(Icons.Rounded.LibraryMusic, "Find songs saved on this phone", "Songs in Music/Radiance Music that aren't in Liked Songs come back, with their covers and lyrics (after the app was uninstalled, say)") {
+                    ask.launch(readMediaPermissions())
+                }
             }
-            SettingsItem(Icons.Rounded.QrCodeScanner, "Get songs", "Scan the QR on another phone, or on your computer (Share Songs with a Phone there)") {
-                app.shareOpen.value = App.ShareAsk(null, scan = true)
+            ServersGroup(onOpen = onOpenServer, check = checkServers)
+            SettingsGroup("Splitting") { Cores() }
+            SettingsGroup("Look") {
+                Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    LookPill("True Black", Color(0xFF000000), !Looks.stone, Modifier.weight(1f)) { Looks.set(context, false) }
+                    LookPill("Stone", Color(0xFF1C1917), Looks.stone, Modifier.weight(1f)) { Looks.set(context, true) }
+                }
             }
-            SettingsItem(Icons.Rounded.Download, "Receive songs here", "Shows a QR for another phone or your computer to send songs to this one, on the same Wi-Fi") {
-                app.share.receive(direct = false)
-                app.shareOpen.value = App.ShareAsk(null)
+            SettingsGroup(null) {
+                SettingsItem(Icons.Rounded.School, "How to use it", "The five things to know, as on the first day", arrow = true) { onGuide() }
+                SettingsItem(Icons.Rounded.Star, "Rate Radiance Music", "Are you enjoying it? A few stars, and anything you'd like to tell us", arrow = true) { Feedback.openNow(context) }
+                SettingsItem(Icons.Rounded.Info, "About Radiance Music", "Version ${Updates.current(context)}. Updates, what's new, and where to tell us what breaks", arrow = true) { about = true }
             }
-        }
-        SettingsGroup("Your songs") {
-            // the songs in Music/Radiance Music (they stay when the app is uninstalled; its list doesn't)
-            val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { app.findSaved(auto = false) }
-            SettingsItem(Icons.Rounded.LibraryMusic, "Find songs saved on this phone", "Songs in Music/Radiance Music that aren't in Liked Songs come back, with their covers and lyrics (after the app was uninstalled, say)") {
-                ask.launch(readMediaPermissions())
-            }
-        }
-        ServersGroup(onOpen = onOpenServer, check = checkServers)
-        SettingsGroup("Splitting") { Cores() }
-        SettingsGroup("Look") {
-            Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                LookPill("True Black", Color(0xFF000000), !Looks.stone, Modifier.weight(1f)) { Looks.set(context, false) }
-                LookPill("Stone", Color(0xFF1C1917), Looks.stone, Modifier.weight(1f)) { Looks.set(context, true) }
-            }
-        }
-        SettingsGroup(null) {
-            SettingsItem(Icons.Rounded.School, "How to use it", "The five things to know, as on the first day", arrow = true) { onGuide() }
-            SettingsItem(Icons.Rounded.Star, "Rate Radiance Music", "Are you enjoying it? A few stars, and anything you'd like to tell us", arrow = true) { Feedback.openNow(context) }
-            SettingsItem(Icons.Rounded.Info, "About Radiance Music", "Version ${Updates.current(context)}. Updates, what's new, and where to tell us what breaks", arrow = true) { about = true }
         }
     }
 }

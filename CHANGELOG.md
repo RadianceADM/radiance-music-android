@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.0
+
+- **Made for tablets and car stereos:** on a tablet, an Android car stereo or a phone on its
+  side, the tabs move to a rail down the left side, and Home, Search, Library and Settings
+  keep to an easy-to-read width in the middle of the screen. When the screen is wider than
+  tall, Now Playing puts the cover beside the controls; Lyrics take the cover's place, so the
+  controls stay where they are. Sharing to a story shows the story beside its choices, and
+  How to Use It puts each picture beside its words. On a phone held upright, nothing changes.
+
 ## 1.0.5
 
 - **No music videos on the phone:** Radiance Music on your phone is for songs. Liking a song

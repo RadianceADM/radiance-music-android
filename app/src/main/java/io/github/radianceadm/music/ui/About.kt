@@ -17,6 +17,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -89,63 +90,66 @@ fun AboutScreen(onClose: () -> Unit) {
     // Report a problem: the sheet with what will be sent (ReportSheet)
     var reporting by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { if (Updates.state.value is Updates.State.Unknown) Updates.check(context) }
+    // wider than a phone: in a column in the middle, scrolling from anywhere on the screen (Fit)
     Column(
-        Modifier.fillMaxSize().background(Brand.Night).statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(bottom = 36.dp),
+        Modifier.fillMaxSize().background(Brand.Night).statusBarsPadding().navigationBarsPadding().sideCutoutPadding().verticalScroll(rememberScrollState()).padding(bottom = 36.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Row(Modifier.fillMaxWidth()) {
-            IconButton(onClick = onClose, modifier = Modifier.padding(start = 4.dp, top = 4.dp)) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", tint = Color.White) }
-        }
-        icon?.let { Image(it, null, Modifier.size(104.dp).clip(RoundedCornerShape(26.dp))) }
-        Spacer(Modifier.height(16.dp))
-        Text("Radiance Music", style = MaterialTheme.typography.headlineMedium, color = Color.White, fontWeight = FontWeight.Bold)
-        Text("Radiance Innovation Centers", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
-        Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Pill(version, Color.White.copy(alpha = 0.1f), Color.White)
-            Pill("Stable", Brand.Orange.copy(alpha = 0.18f), Brand.Glow)
-        }
-        Text(
-            "Search any song and play it, lossless first. Like it to keep it on your phone with its cover and lyrics, " +
-                "and split it into its music and its vocals right here, for karaoke.",
-            color = Brand.Dim, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 28.dp, vertical = 18.dp),
-        )
-        Column(Modifier.fillMaxWidth()) {
-            SettingsGroup("Updates") { UpdatePanel() }
-            WhatsNew(context)
-            SettingsGroup("Tell us what breaks") {
-                SettingsItem(Icons.Rounded.BugReport, "Report a problem", "Send us what went wrong, with the app's log (you see it all first)") { reporting = true }
-                SettingsItem(Icons.Rounded.Public, "Report on GitHub", "What you did, and what happened, in the open") { open("https://github.com/RadianceADM/radiance-music-android/issues") }
-                SettingsItem(Icons.Rounded.MailOutline, "Email us", "hello@radianceph.com") { open("mailto:hello@radianceph.com?subject=Radiance%20Music%20$version%20(Android)") }
+        Column(Modifier.widthIn(max = Fit.COLUMN).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Row(Modifier.fillMaxWidth()) {
+                IconButton(onClick = onClose, modifier = Modifier.padding(start = 4.dp, top = 4.dp)) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", tint = Color.White) }
             }
-            if (reporting) ReportSheet(onDone = { reporting = false })
-            SettingsGroup("More") {
-                SettingsItem(Icons.Rounded.Public, "music.radianceph.com", "The app for your computer, and what's coming") { open("https://music.radianceph.com") }
-                SettingsItem(Icons.Rounded.Code, "Free and open source", "GNU GPL, version 3 or later: the code is on GitHub") { open("https://github.com/RadianceADM/radiance-music-android") }
+            icon?.let { Image(it, null, Modifier.size(104.dp).clip(RoundedCornerShape(26.dp))) }
+            Spacer(Modifier.height(16.dp))
+            Text("Radiance Music", style = MaterialTheme.typography.headlineMedium, color = Color.White, fontWeight = FontWeight.Bold)
+            Text("Radiance Innovation Centers", color = Brand.Dim, style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Pill(version, Color.White.copy(alpha = 0.1f), Color.White)
+                Pill("Stable", Brand.Orange.copy(alpha = 0.18f), Brand.Glow)
             }
-            SettingsGroup("Music and lyrics from") {
-                Credits(listOf("Internet Archive" to "https://archive.org", "YouTube Music" to "https://music.youtube.com", "LRCLIB" to "https://lrclib.net"))
+            Text(
+                "Search any song and play it, lossless first. Like it to keep it on your phone with its cover and lyrics, " +
+                    "and split it into its music and its vocals right here, for karaoke.",
+                color = Brand.Dim, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 28.dp, vertical = 18.dp),
+            )
+            Column(Modifier.fillMaxWidth()) {
+                SettingsGroup("Updates") { UpdatePanel() }
+                WhatsNew(context)
+                SettingsGroup("Tell us what breaks") {
+                    SettingsItem(Icons.Rounded.BugReport, "Report a problem", "Send us what went wrong, with the app's log (you see it all first)") { reporting = true }
+                    SettingsItem(Icons.Rounded.Public, "Report on GitHub", "What you did, and what happened, in the open") { open("https://github.com/RadianceADM/radiance-music-android/issues") }
+                    SettingsItem(Icons.Rounded.MailOutline, "Email us", "hello@radianceph.com") { open("mailto:hello@radianceph.com?subject=Radiance%20Music%20$version%20(Android)") }
+                }
+                if (reporting) ReportSheet(onDone = { reporting = false })
+                SettingsGroup("More") {
+                    SettingsItem(Icons.Rounded.Public, "music.radianceph.com", "The app for your computer, and what's coming") { open("https://music.radianceph.com") }
+                    SettingsItem(Icons.Rounded.Code, "Free and open source", "GNU GPL, version 3 or later: the code is on GitHub") { open("https://github.com/RadianceADM/radiance-music-android") }
+                }
+                SettingsGroup("Music and lyrics from") {
+                    Credits(listOf("Internet Archive" to "https://archive.org", "YouTube Music" to "https://music.youtube.com", "LRCLIB" to "https://lrclib.net"))
+                }
+                SettingsGroup("Built with") {
+                    Credits(listOf(
+                        "NewPipe Extractor" to "https://github.com/TeamNewPipe/NewPipeExtractor",
+                        "Media3" to "https://developer.android.com/media/media3",
+                        "Spleeter (Deezer)" to "https://github.com/deezer/spleeter",
+                        "sherpa-onnx" to "https://github.com/k2-fsa/sherpa-onnx",
+                        "ONNX Runtime" to "https://onnxruntime.ai",
+                        "OkHttp" to "https://square.github.io/okhttp",
+                        "Coil" to "https://coil-kt.github.io/coil",
+                        "ZXing" to "https://github.com/zxing/zxing",
+                    ))
+                }
             }
-            SettingsGroup("Built with") {
-                Credits(listOf(
-                    "NewPipe Extractor" to "https://github.com/TeamNewPipe/NewPipeExtractor",
-                    "Media3" to "https://developer.android.com/media/media3",
-                    "Spleeter (Deezer)" to "https://github.com/deezer/spleeter",
-                    "sherpa-onnx" to "https://github.com/k2-fsa/sherpa-onnx",
-                    "ONNX Runtime" to "https://onnxruntime.ai",
-                    "OkHttp" to "https://square.github.io/okhttp",
-                    "Coil" to "https://coil-kt.github.io/coil",
-                    "ZXing" to "https://github.com/zxing/zxing",
-                ))
+            Spacer(Modifier.height(28.dp))
+            Canvas(Modifier.width((Logo.widthFor(44f)).dp).height(44.dp)) {
+                drawIntoCanvas { Logo.draw(it.nativeCanvas, 0f, 0f, size.height) }
             }
+            Spacer(Modifier.height(12.dp))
+            Text("© 2026 Radiance Innovation Centers", color = Brand.Dim, style = MaterialTheme.typography.labelMedium)
         }
-        Spacer(Modifier.height(28.dp))
-        Canvas(Modifier.width((Logo.widthFor(44f)).dp).height(44.dp)) {
-            drawIntoCanvas { Logo.draw(it.nativeCanvas, 0f, 0f, size.height) }
-        }
-        Spacer(Modifier.height(12.dp))
-        Text("© 2026 Radiance Innovation Centers", color = Brand.Dim, style = MaterialTheme.typography.labelMedium)
     }
 }
 

@@ -6,6 +6,9 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -88,7 +91,7 @@ fun GuideScreen(onDone: () -> Unit) {
     Box(Modifier.fillMaxSize().background(Brand.Night)) {
         // the sunset's glow, low down, as the start screen's
         Box(Modifier.fillMaxSize().background(Brush.radialGradient(listOf(Brand.Orange.copy(alpha = 0.22f), Color.Transparent), radius = 1400f)))
-        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().sideCutoutPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("How to use it", color = Brand.Dim, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 12.dp).weight(1f))
                 if (!last) TextButton(onClick = onDone) { Text("Skip", color = Color.White) }
@@ -97,20 +100,36 @@ fun GuideScreen(onDone: () -> Unit) {
                 val card = pages[i]
                 // the card moving away fades and settles back a little
                 val off = (pager.currentPage - i + pager.currentPageOffsetFraction).absoluteValue.coerceIn(0f, 1f)
-                Column(
-                    Modifier.fillMaxSize().graphicsLayer { alpha = 1f - off * 0.6f; scaleX = 1f - off * 0.08f; scaleY = 1f - off * 0.08f }.padding(horizontal = 34.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Box(Modifier.size(168.dp).clip(CircleShape).background(Brush.radialGradient(listOf(Brand.Glow.copy(alpha = 0.55f), Brand.Orange.copy(alpha = 0.18f), Color.Transparent))), contentAlignment = Alignment.Center) {
-                        Box(Modifier.size(104.dp).clip(CircleShape).background(Brand.Card), contentAlignment = Alignment.Center) {
-                            Icon(card.icon, null, tint = Brand.Orange, modifier = Modifier.size(52.dp))
+                val settle = Modifier.graphicsLayer { alpha = 1f - off * 0.6f; scaleX = 1f - off * 0.08f; scaleY = 1f - off * 0.08f }
+                BoxWithConstraints(Modifier.fillMaxSize()) {
+                    if (maxWidth > maxHeight && maxHeight < 440.dp) {
+                        // a phone on its side: one above the other doesn't fit the height, so the picture beside the words
+                        Row(
+                            Modifier.fillMaxSize().then(settle).padding(horizontal = 34.dp).wrapContentWidth().widthIn(max = Fit.PAGE),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            GuidePicture(card)
+                            Spacer(Modifier.width(36.dp))
+                            Column {
+                                Text(card.title, color = Color.White, fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.ExtraBold)
+                                Spacer(Modifier.height(10.dp))
+                                Text(card.words, color = Color.White.copy(alpha = 0.75f), fontSize = 17.sp, lineHeight = 25.sp)
+                            }
+                        }
+                    } else {
+                        // wider than a phone: the words no wider than reads well, in the middle (Fit)
+                        Column(
+                            Modifier.fillMaxSize().then(settle).padding(horizontal = 34.dp).wrapContentWidth().widthIn(max = Fit.COLUMN),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                        ) {
+                            GuidePicture(card)
+                            Spacer(Modifier.height(40.dp))
+                            Text(card.title, color = Color.White, fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.Center)
+                            Spacer(Modifier.height(14.dp))
+                            Text(card.words, color = Color.White.copy(alpha = 0.75f), fontSize = 17.sp, lineHeight = 25.sp, textAlign = TextAlign.Center)
                         }
                     }
-                    Spacer(Modifier.height(40.dp))
-                    Text(card.title, color = Color.White, fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.Center)
-                    Spacer(Modifier.height(14.dp))
-                    Text(card.words, color = Color.White.copy(alpha = 0.75f), fontSize = 17.sp, lineHeight = 25.sp, textAlign = TextAlign.Center)
                 }
             }
             // where you are: a dot each, the current one long
@@ -123,7 +142,7 @@ fun GuideScreen(onDone: () -> Unit) {
                 }
             }
             Row(
-                Modifier.padding(start = 24.dp, end = 24.dp, bottom = 24.dp).fillMaxWidth().clip(RoundedCornerShape(50)).background(Brand.Orange)
+                Modifier.widthIn(max = Fit.COLUMN).padding(start = 24.dp, end = 24.dp, bottom = 24.dp).fillMaxWidth().clip(RoundedCornerShape(50)).background(Brand.Orange)
                     .clickable { if (last) onDone() else scope.launch { pager.animateScrollToPage(pager.currentPage + 1) } }.padding(vertical = 16.dp),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
@@ -136,3 +155,12 @@ fun GuideScreen(onDone: () -> Unit) {
     }
 }
 
+/** A card's picture: its icon on a dark disc, in the sunset's glow. */
+@Composable
+private fun GuidePicture(card: Guide.Card) {
+    Box(Modifier.size(168.dp).clip(CircleShape).background(Brush.radialGradient(listOf(Brand.Glow.copy(alpha = 0.55f), Brand.Orange.copy(alpha = 0.18f), Color.Transparent))), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(104.dp).clip(CircleShape).background(Brand.Card), contentAlignment = Alignment.Center) {
+            Icon(card.icon, null, tint = Brand.Orange, modifier = Modifier.size(52.dp))
+        }
+    }
+}

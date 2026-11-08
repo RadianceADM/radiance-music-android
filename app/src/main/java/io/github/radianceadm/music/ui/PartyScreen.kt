@@ -7,6 +7,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -126,7 +127,8 @@ fun PartyView(n: Party.Now, position: () -> Long?, floats: Flow<Reaction> = empt
     var ending by remember { mutableStateOf(false) }
     var entryMenu by remember { mutableStateOf<PartySong?>(null) }
     Box(Modifier.fillMaxSize().background(Brand.Night)) {
-        LazyColumn(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(), contentPadding = PaddingValues(bottom = 28.dp)) {
+        // wider than a phone: the party in the middle, no wider than reads well (Fit)
+        LazyColumn(Modifier.align(Alignment.TopCenter).widthIn(max = Fit.PAGE).fillMaxSize().statusBarsPadding().navigationBarsPadding().sideCutoutPadding(), contentPadding = PaddingValues(bottom = 28.dp)) {
             item {
                 Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 12.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onClose) { Icon(Icons.Rounded.KeyboardArrowDown, "Close", tint = Color.White, modifier = Modifier.size(30.dp)) }

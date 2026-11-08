@@ -13,6 +13,26 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationRailItemDefaults
+import androidx.compose.material3.ScaffoldDefaults
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -120,7 +140,7 @@ private enum class Tab(val label: String, val icon: ImageVector) {
 }
 
 @Composable
-private fun Radiance() {
+internal fun Radiance() {
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
     var nowPlaying by rememberSaveable { mutableStateOf(false) }
     var settings by rememberSaveable { mutableStateOf(false) }
@@ -132,31 +152,62 @@ private fun Radiance() {
     val ctx = LocalContext.current
     // how to use it: the first time the app opens (under the start's splash, seen as it opens)
     var guide by rememberSaveable { mutableStateOf(Guide.due(ctx)) }
-    Box(Modifier.fillMaxSize()) {
-        Scaffold(
-            containerColor = Brand.Night,
-            bottomBar = {
-                Column {
-                    OfflinePill() // offline: a small pill over the song playing
-                    MiniPlayer(onOpen = { if (App.instance.party.joined) party = true else nowPlaying = true })
-                    NavigationBar(containerColor = Brand.Night) {
-                        Tab.entries.forEach { t ->
-                            NavigationBarItem(
-                                selected = tab == t,
-                                onClick = { tab = t },
-                                icon = { Icon(t.icon, null) },
-                                label = { Text(t.label) },
-                                colors = NavigationBarItemDefaults.colors(selectedIconColor = Color.White, selectedTextColor = Brand.Orange, indicatorColor = Brand.Orange.copy(alpha = 0.3f), unselectedIconColor = Brand.Dim, unselectedTextColor = Brand.Dim),
-                            )
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        // a tablet, a car's stereo, a phone on its side: the tabs down the side, the pages a readable width (Fit)
+        val wide = Fit.wide(maxWidth)
+        Row(Modifier.fillMaxSize().background(Brand.Night)) {
+            if (wide) NavigationRail(
+                containerColor = Brand.Night,
+                windowInsets = WindowInsets.systemBars.union(WindowInsets.displayCutout).only(WindowInsetsSides.Vertical + WindowInsetsSides.Start),
+            ) {
+                // in the middle of the side, where a hand on a tablet's edge (or a car's stereo) reaches
+                Spacer(Modifier.weight(1f))
+                Tab.entries.forEach { t ->
+                    NavigationRailItem(
+                        selected = tab == t,
+                        onClick = { tab = t },
+                        icon = { Icon(t.icon, null) },
+                        label = { Text(t.label) },
+                        colors = NavigationRailItemDefaults.colors(selectedIconColor = Color.White, selectedTextColor = Brand.Orange, indicatorColor = Brand.Orange.copy(alpha = 0.3f), unselectedIconColor = Brand.Dim, unselectedTextColor = Brand.Dim),
+                        modifier = Modifier.padding(vertical = 6.dp),
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+            }
+            Scaffold(
+                modifier = Modifier.weight(1f),
+                containerColor = Brand.Night,
+                // beside the rail, the rail keeps clear of the screen's start side: only the other sides here
+                contentWindowInsets = if (wide) WindowInsets.systemBars.only(WindowInsetsSides.Vertical + WindowInsetsSides.End) else ScaffoldDefaults.contentWindowInsets,
+                bottomBar = {
+                    Column(if (wide) Modifier.windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.displayCutout).only(WindowInsetsSides.End)) else Modifier) {
+                        OfflinePill() // offline: a small pill over the song playing
+                        MiniPlayer(onOpen = { if (App.instance.party.joined) party = true else nowPlaying = true })
+                        if (wide) {
+                            // no tabs under it: clear of the gesture bar, with a little room
+                            Spacer(Modifier.navigationBarsPadding().height(8.dp))
+                        } else NavigationBar(containerColor = Brand.Night) {
+                            Tab.entries.forEach { t ->
+                                NavigationBarItem(
+                                    selected = tab == t,
+                                    onClick = { tab = t },
+                                    icon = { Icon(t.icon, null) },
+                                    label = { Text(t.label) },
+                                    colors = NavigationBarItemDefaults.colors(selectedIconColor = Color.White, selectedTextColor = Brand.Orange, indicatorColor = Brand.Orange.copy(alpha = 0.3f), unselectedIconColor = Brand.Dim, unselectedTextColor = Brand.Dim),
+                                )
+                            }
                         }
                     }
+                },
+            ) { pad ->
+                // a phone: the page as it was; wider, in the middle, no wider than reads well (clear of a side notch or buttons)
+                Readable(Fit.PAGE, if (wide) Modifier.windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.displayCutout).only(WindowInsetsSides.End)) else Modifier) {
+                    when (tab) {
+                        Tab.Home -> HomeScreen(pad, onSearch = { tab = Tab.Search }, onSettings = { settings = true })
+                        Tab.Search -> SearchScreen(pad)
+                        Tab.Library -> LibraryScreen(pad, onSettings = { settings = true }, onParty = { party = true })
+                    }
                 }
-            },
-        ) { pad ->
-            when (tab) {
-                Tab.Home -> HomeScreen(pad, onSearch = { tab = Tab.Search }, onSettings = { settings = true })
-                Tab.Search -> SearchScreen(pad)
-                Tab.Library -> LibraryScreen(pad, onSettings = { settings = true }, onParty = { party = true })
             }
         }
         AnimatedVisibility(nowPlaying, enter = slideInVertically { it }, exit = slideOutVertically { it }) {

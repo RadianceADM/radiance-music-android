@@ -1,6 +1,11 @@
 package io.github.radianceadm.music.ui
 
 import androidx.compose.animation.togetherWith
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeOut
@@ -266,34 +271,17 @@ fun NowPlayingScreen(onClose: () -> Unit) {
         }
         Unit
     }
-    Box(Modifier.fillMaxSize().graphicsLayer { translationY = pull.value }.clip(RoundedCornerShape(if (pull.value > 1f) 28.dp else 0.dp))) {
-        Backdrop(t?.art)
-        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 26.dp)) {
-            Grabber(onClose, pulled, let)
-            OfflinePill()
-            if (t != null && showLyrics) {
-                Row(Modifier.padding(top = 6.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(60.dp).shadow(10.dp, RoundedCornerShape(8.dp)).clip(RoundedCornerShape(8.dp)).background(Brand.Card)) {
-                        if (!t.art.isNullOrEmpty()) AsyncImage(t.art, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                    }
-                    Spacer(Modifier.width(14.dp))
-                    SongTitle(t, Modifier.weight(1f), small = true, note = problem)
-                    Heart(t)
-                    More(t, onShare = { sharing = emptyList() }, onMixer = { showMixer = true })
-                }
-                Box(Modifier.weight(1f).fillMaxWidth()) { LyricsView(t, position, onShareLine = { sharing = listOf(it) }) }
-            } else {
-                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    SwipeCover(t, around, playing, pulled, let)
-                }
-                Row(Modifier.padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-                    SongTitle(t, Modifier.weight(1f), small = false, note = problem)
-                    if (t != null) {
-                        Heart(t)
-                        More(t, onShare = { sharing = emptyList() }, onMixer = { showMixer = true })
-                    }
-                }
-            }
+    BoxWithConstraints(Modifier.fillMaxSize().graphicsLayer { translationY = pull.value }.clip(RoundedCornerShape(if (pull.value > 1f) 28.dp else 0.dp)), contentAlignment = Alignment.TopCenter) {
+        // wider than tall from 600 dp (a tablet or a phone on its side, a car's stereo): the cover beside the
+        // controls. Upright: the phone's column, on a tablet no wider than reads well (Fit)
+        val wide = Fit.wide(maxWidth)
+        val side = Fit.sideBySide(maxWidth, maxHeight)
+        val lyricsOn = t != null && showLyrics
+        val songActions: @Composable (Track) -> Unit = { s ->
+            Heart(s)
+            More(s, onShare = { sharing = emptyList() }, onMixer = { showMixer = true })
+        }
+        val controls: @Composable () -> Unit = {
             Scrubber(position, duration, t) { hub.seek((it * duration).toLong()) }
             Row(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 10.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { hub.previous() }, modifier = Modifier.size(72.dp)) { Icon(Icons.Rounded.FastRewind, "Previous", tint = Color.White, modifier = Modifier.size(44.dp)) }
@@ -313,6 +301,76 @@ fun NowPlayingScreen(onClose: () -> Unit) {
             }
             if (t != null) KaraokeStatus(t)
         }
+        Backdrop(t?.art)
+        if (side) {
+            Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().sideCutoutPadding().padding(horizontal = 26.dp)) {
+                Grabber(onClose, pulled, let)
+                OfflinePill()
+                Row(Modifier.weight(1f).fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(40.dp)) {
+                    // the cover, or (Lyrics on) the lyrics, the whole height; one crossfades into the other (blueprint rule 16)
+                    AnimatedContent(
+                        targetState = lyricsOn,
+                        transitionSpec = { fadeIn(Motion.enter(Motion.PAGE)) togetherWith fadeOut(Motion.exit(Motion.PAGE * 8 / 10)) },
+                        contentAlignment = Alignment.Center,
+                        label = "cover or lyrics",
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                    ) { lyrics ->
+                        if (lyrics && t != null) {
+                            Box(Modifier.fillMaxSize()) { LyricsView(t, position, onShareLine = { sharing = listOf(it) }) }
+                        } else {
+                            // the songs either side stay in this half while the cover's swiped (not over the controls)
+                            Box(Modifier.fillMaxSize().clipToBounds(), contentAlignment = Alignment.Center) {
+                                SwipeCover(t, around, playing, pulled, let, fit = Modifier.padding(12.dp).aspectRatio(1f), neighboursWhileMoving = true)
+                            }
+                        }
+                    }
+                    // the controls in the middle of the other half: where they always are, lyrics or not
+                    Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.Center) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            // the cover gives way to the lyrics: small, beside the song (as the phone has it)
+                            AnimatedVisibility(
+                                visible = lyricsOn,
+                                enter = fadeIn(Motion.enter(Motion.MICRO)) + scaleIn(Motion.enter(Motion.MICRO), initialScale = 0.8f),
+                                exit = fadeOut(Motion.exit(Motion.MICRO_OUT)) + scaleOut(Motion.exit(Motion.MICRO_OUT), targetScale = 0.8f),
+                                label = "small cover",
+                            ) {
+                                Row {
+                                    SmallCover(t?.art)
+                                    Spacer(Modifier.width(14.dp))
+                                }
+                            }
+                            SongTitle(t, Modifier.weight(1f), small = false, note = problem)
+                            if (t != null) songActions(t)
+                        }
+                        controls()
+                    }
+                }
+            }
+        } else {
+            Column(Modifier.widthIn(max = Fit.COLUMN).fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 26.dp)) {
+                Grabber(onClose, pulled, let)
+                OfflinePill()
+                if (t != null && showLyrics) {
+                    Row(Modifier.padding(top = 6.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        SmallCover(t.art)
+                        Spacer(Modifier.width(14.dp))
+                        SongTitle(t, Modifier.weight(1f), small = true, note = problem)
+                        songActions(t)
+                    }
+                    Box(Modifier.weight(1f).fillMaxWidth()) { LyricsView(t, position, onShareLine = { sharing = listOf(it) }) }
+                } else {
+                    Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        // a tablet upright: the songs either side only while it's swiped (its sides are wider than the cover)
+                        SwipeCover(t, around, playing, pulled, let, neighboursWhileMoving = wide)
+                    }
+                    Row(Modifier.padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                        SongTitle(t, Modifier.weight(1f), small = false, note = problem)
+                        if (t != null) songActions(t)
+                    }
+                }
+                controls()
+            }
+        }
     }
     if (t != null) sharing?.let { start -> ShareSheet(t, start, onDismiss = { sharing = null }) }
     if (showQueue) ModalBottomSheet(onDismissRequest = { showQueue = false }, containerColor = Brand.Sheet) { QueueSheet() }
@@ -326,6 +384,14 @@ fun NowPlayingScreen(onClose: () -> Unit) {
         dragHandle = null,
         containerColor = Brand.Sheet,
     ) { MixerSheet(t, mixable) { showMixer = false } }
+}
+
+/** The cover, small, beside the song while the lyrics show. */
+@Composable
+private fun SmallCover(art: String?) {
+    Box(Modifier.size(60.dp).shadow(10.dp, RoundedCornerShape(8.dp)).clip(RoundedCornerShape(8.dp)).background(Brand.Card)) {
+        if (!art.isNullOrEmpty()) AsyncImage(art, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+    }
 }
 
 /** The handle at the top: tap it, or pull it down, to close. */
@@ -390,7 +456,11 @@ private fun More(t: Track, onShare: () -> Unit, onMixer: () -> Unit) {
  * either end it only gives a little. Pulled down instead, Now Playing closes.
  */
 @Composable
-private fun SwipeCover(t: Track?, around: Pair<Track?, Track?>, playing: Boolean, pulled: (Float) -> Unit, let: (Float) -> Unit) {
+private fun SwipeCover(
+    t: Track?, around: Pair<Track?, Track?>, playing: Boolean, pulled: (Float) -> Unit, let: (Float) -> Unit,
+    fit: Modifier = Modifier.fillMaxWidth().aspectRatio(1f),
+    neighboursWhileMoving: Boolean = false,
+) {
     val hub = App.instance.player
     val scope = rememberCoroutineScope()
     val offset = remember { Animatable(0f) }
@@ -398,7 +468,10 @@ private fun SwipeCover(t: Track?, around: Pair<Track?, Track?>, playing: Boolean
     val (prev, next) = around
     // the new song is in the middle now: no slide left over
     LaunchedEffect(t?.key) { offset.snapTo(0f) }
-    BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(1f)) {
+    // where the window is wider than the cover (a tablet, a car's stereo), the songs either side would show
+    // beside it: there they come only with a swipe (read as it crosses zero, not each frame)
+    val moving by remember { derivedStateOf { offset.value != 0f } }
+    BoxWithConstraints(fit) {
         val w = constraints.maxWidth.toFloat()
         val gap = w * 1.12f
         val shape = RoundedCornerShape(14.dp)
@@ -451,8 +524,10 @@ private fun SwipeCover(t: Track?, around: Pair<Track?, Track?>, playing: Boolean
             }
         }
         Box(Modifier.fillMaxSize().then(gesture)) {
-            prev?.let { Cover(it.art, shape, Modifier.graphicsLayer { translationX = offset.value - gap; scaleX = 0.8f; scaleY = 0.8f }) }
-            next?.let { Cover(it.art, shape, Modifier.graphicsLayer { translationX = offset.value + gap; scaleX = 0.8f; scaleY = 0.8f }) }
+            if (!neighboursWhileMoving || moving) {
+                prev?.let { Cover(it.art, shape, Modifier.graphicsLayer { translationX = offset.value - gap; scaleX = 0.8f; scaleY = 0.8f }) }
+                next?.let { Cover(it.art, shape, Modifier.graphicsLayer { translationX = offset.value + gap; scaleX = 0.8f; scaleY = 0.8f }) }
+            }
             Cover(t?.art, shape, Modifier.graphicsLayer { translationX = offset.value; scaleX = scale; scaleY = scale })
         }
     }

@@ -4,6 +4,10 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -252,94 +256,112 @@ internal fun ShareScreen(t: Track, startLines: List<String>, onClose: () -> Unit
 
     val base = tone?.let { Color(it) } ?: art?.let { Color(StoryCard.swatches(it).first()) } ?: Brand.Card
     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(base, Color.Black)))) {
-        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { job?.cancel(); onClose() }) { Icon(Icons.Rounded.Close, "Close", tint = Color.White) }
-                Text("Share", color = Color.White, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
-                Spacer(Modifier.size(48.dp))
-            }
+        // wider than tall from 600 dp (a tablet or a phone on its side): the story beside its choices, not squeezed above them (Fit)
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val side = Fit.sideBySide(maxWidth, maxHeight)
             // the story, as big as fits
-            Box(Modifier.weight(1f).fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-                Box(Modifier.fillMaxHeight().aspectRatio(9f / 16f).shadow(24.dp, RoundedCornerShape(18.dp)).clip(RoundedCornerShape(18.dp)).background(Color.Black.copy(alpha = 0.3f)), contentAlignment = Alignment.Center) {
-                    val c = card
-                    if (c != null) Image(c.asImageBitmap(), "The story", Modifier.fillMaxSize()) else CircularProgressIndicator(color = Color.White, modifier = Modifier.size(28.dp))
-                    if (sound && song != null) {
-                        Row(
-                            Modifier.align(Alignment.TopStart).padding(10.dp).clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.55f)).padding(horizontal = 10.dp, vertical = 5.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(Icons.Rounded.VolumeUp, null, tint = Color.White, modifier = Modifier.size(14.dp))
-                            Spacer(Modifier.width(5.dp))
-                            Text("${clock(clip.startMs / 1000)} · ${clip.lengthMs / 1000} s", color = Color.White, fontSize = 12.sp)
+            val story: @Composable (Modifier) -> Unit = { place ->
+                Box(place.padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.fillMaxHeight().aspectRatio(9f / 16f).shadow(24.dp, RoundedCornerShape(18.dp)).clip(RoundedCornerShape(18.dp)).background(Color.Black.copy(alpha = 0.3f)), contentAlignment = Alignment.Center) {
+                        val c = card
+                        if (c != null) Image(c.asImageBitmap(), "The story", Modifier.fillMaxSize()) else CircularProgressIndicator(color = Color.White, modifier = Modifier.size(28.dp))
+                        if (sound && song != null) {
+                            Row(
+                                Modifier.align(Alignment.TopStart).padding(10.dp).clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.55f)).padding(horizontal = 10.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(Icons.Rounded.VolumeUp, null, tint = Color.White, modifier = Modifier.size(14.dp))
+                                Spacer(Modifier.width(5.dp))
+                                Text("${clock(clip.startMs / 1000)} · ${clip.lengthMs / 1000} s", color = Color.White, fontSize = 12.sp)
+                            }
                         }
-                    }
-                    if (making != null) {
-                        Column(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.6f)), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                            CircularProgressIndicator(progress = { making ?: 0f }, color = Color.White, trackColor = Color.White.copy(alpha = 0.2f), modifier = Modifier.size(44.dp))
-                            Spacer(Modifier.height(12.dp))
-                            Text("Making the video… ${((making ?: 0f) * 100).toInt()} %", color = Color.White, style = MaterialTheme.typography.bodyMedium)
-                            TextButton(onClick = { job?.cancel(); making = null }) { Labeled(Icons.Rounded.Close, "Cancel", Color.White) }
+                        if (making != null) {
+                            Column(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.6f)), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                                CircularProgressIndicator(progress = { making ?: 0f }, color = Color.White, trackColor = Color.White.copy(alpha = 0.2f), modifier = Modifier.size(44.dp))
+                                Spacer(Modifier.height(12.dp))
+                                Text("Making the video… ${((making ?: 0f) * 100).toInt()} %", color = Color.White, style = MaterialTheme.typography.bodyMedium)
+                                TextButton(onClick = { job?.cancel(); making = null }) { Labeled(Icons.Rounded.Close, "Cancel", Color.White) }
+                            }
                         }
                     }
                 }
             }
-            // which part of the song (#19): only for a story with sound, of a song whose length is known
-            if (withSound && songMs > 0) {
-                ClipStrip(
-                    bars = bars,
-                    window = part,
-                    songMs = songMs,
-                    enabled = !timed,
-                    playing = hearing,
-                    onChange = { w ->
-                        window = w
-                        val grab = held
-                        if (grab != null && preview != null) {
-                            preview.follow(w)
-                            val now = android.os.SystemClock.uptimeMillis()
-                            // the part plays as it's dragged (an end: the 3 s before it)
-                            if (now - lastSeek[0] > 300) { lastSeek[0] = now; hear(w, if (grab == StripTouch.Grab.END) w.endMs - 3_000 else w.startMs) }
-                        }
-                    },
-                    onTouch = { down, grab ->
-                        held = if (down) grab else null
-                        if (down) hear(window, if (grab == StripTouch.Grab.END) window.endMs - 3_000 else window.startMs)
-                        else hear(window)
-                    },
-                    onHear = { if (hearing) quiet() else hear(part) },
-                    modifier = Modifier.padding(bottom = 4.dp),
-                )
-            }
-            // Cover or Lyrics, and the sound
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                Chip("Cover", !lyricsStyle, icon = { on -> Icon(Icons.Rounded.Image, null, tint = if (on) Color.Black else Color.White, modifier = Modifier.size(16.dp)) }) { lyricsStyle = false }
-                Spacer(Modifier.width(8.dp))
-                Chip("Lyrics", lyricsStyle, icon = { on -> Icon(if (on && picked.isNotEmpty()) Icons.Rounded.Edit else Icons.Rounded.FormatQuote, null, tint = if (on) Color.Black else Color.White, modifier = Modifier.size(16.dp)) }) {
-                    if (lyricsStyle || picked.isEmpty()) choosing = true
-                    lyricsStyle = true
-                }
-                Spacer(Modifier.width(8.dp))
-                Chip(if (sound && song != null) "With sound" else "No sound", sound && song != null, icon = { on -> Icon(if (on) Icons.Rounded.VolumeUp else Icons.Rounded.VolumeOff, null, tint = if (on) Color.Black else Color.White, modifier = Modifier.size(16.dp)) }) {
-                    when {
-                        song != null -> sound = !sound
-                        App.instance.library.isLiked(t.key) -> say(Notice("“${t.title}” is still saving: the sound is here once it's saved."))
-                        else -> say(Notice("The sound comes from the song's saved copy: like it to save it.", Notice.Action("Like it", Icons.Rounded.Favorite) { App.instance.like(t) }))
-                    }
-                }
-            }
-            // its colour
-            LazyRow(Modifier.fillMaxWidth().padding(vertical = 6.dp), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                itemsIndexed(swatches) { i, c ->
-                    val on = if (tone == null) i == 0 else tone == c
-                    Box(
-                        Modifier.size(34.dp).clip(CircleShape).border(if (on) 3.dp else 1.dp, if (on) Color.White else Color.White.copy(alpha = 0.25f), CircleShape)
-                            .padding(if (on) 5.dp else 2.dp).clip(CircleShape).background(Color(c)).clickable { tone = if (i == 0) null else c },
+            // which part of the song, cover or lyrics, its colour, where it goes
+            val choices: @Composable () -> Unit = {
+                // which part of the song (#19): only for a story with sound, of a song whose length is known
+                if (withSound && songMs > 0) {
+                    ClipStrip(
+                        bars = bars,
+                        window = part,
+                        songMs = songMs,
+                        enabled = !timed,
+                        playing = hearing,
+                        onChange = { w ->
+                            window = w
+                            val grab = held
+                            if (grab != null && preview != null) {
+                                preview.follow(w)
+                                val now = android.os.SystemClock.uptimeMillis()
+                                // the part plays as it's dragged (an end: the 3 s before it)
+                                if (now - lastSeek[0] > 300) { lastSeek[0] = now; hear(w, if (grab == StripTouch.Grab.END) w.endMs - 3_000 else w.startMs) }
+                            }
+                        },
+                        onTouch = { down, grab ->
+                            held = if (down) grab else null
+                            if (down) hear(window, if (grab == StripTouch.Grab.END) window.endMs - 3_000 else window.startMs)
+                            else hear(window)
+                        },
+                        onHear = { if (hearing) quiet() else hear(part) },
+                        modifier = Modifier.padding(bottom = 4.dp),
                     )
                 }
+                // Cover or Lyrics, and the sound
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                    Chip("Cover", !lyricsStyle, icon = { on -> Icon(Icons.Rounded.Image, null, tint = if (on) Color.Black else Color.White, modifier = Modifier.size(16.dp)) }) { lyricsStyle = false }
+                    Spacer(Modifier.width(8.dp))
+                    Chip("Lyrics", lyricsStyle, icon = { on -> Icon(if (on && picked.isNotEmpty()) Icons.Rounded.Edit else Icons.Rounded.FormatQuote, null, tint = if (on) Color.Black else Color.White, modifier = Modifier.size(16.dp)) }) {
+                        if (lyricsStyle || picked.isEmpty()) choosing = true
+                        lyricsStyle = true
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Chip(if (sound && song != null) "With sound" else "No sound", sound && song != null, icon = { on -> Icon(if (on) Icons.Rounded.VolumeUp else Icons.Rounded.VolumeOff, null, tint = if (on) Color.Black else Color.White, modifier = Modifier.size(16.dp)) }) {
+                        when {
+                            song != null -> sound = !sound
+                            App.instance.library.isLiked(t.key) -> say(Notice("“${t.title}” is still saving: the sound is here once it's saved."))
+                            else -> say(Notice("The sound comes from the song's saved copy: like it to save it.", Notice.Action("Like it", Icons.Rounded.Favorite) { App.instance.like(t) }))
+                        }
+                    }
+                }
+                // its colour
+                LazyRow(Modifier.fillMaxWidth().padding(vertical = 6.dp), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = if (side) Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally) else Arrangement.spacedBy(12.dp)) {
+                    itemsIndexed(swatches) { i, c ->
+                        val on = if (tone == null) i == 0 else tone == c
+                        Box(
+                            Modifier.size(34.dp).clip(CircleShape).border(if (on) 3.dp else 1.dp, if (on) Color.White else Color.White.copy(alpha = 0.25f), CircleShape)
+                                .padding(if (on) 5.dp else 2.dp).clip(CircleShape).background(Color(c)).clickable { tone = if (i == 0) null else c },
+                        )
+                    }
+                }
+                // where it goes
+                LazyRow(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 14.dp), contentPadding = PaddingValues(horizontal = 14.dp), horizontalArrangement = if (side) Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally) else Arrangement.spacedBy(6.dp)) {
+                    items(targets, key = { it.id }) { target -> TargetButton(target, enabled = card != null && making == null) { go(target) } }
+                }
             }
-            // where it goes
-            LazyRow(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 14.dp), contentPadding = PaddingValues(horizontal = 14.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                items(targets, key = { it.id }) { target -> TargetButton(target, enabled = card != null && making == null) { go(target) } }
+            Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { job?.cancel(); onClose() }) { Icon(Icons.Rounded.Close, "Close", tint = Color.White) }
+                    Text("Share", color = Color.White, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
+                    Spacer(Modifier.size(48.dp))
+                }
+                if (side) {
+                    Row(Modifier.weight(1f).fillMaxWidth().sideCutoutPadding()) {
+                        story(Modifier.weight(1f).fillMaxHeight())
+                        Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.Center) { choices() }
+                    }
+                } else {
+                    story(Modifier.weight(1f).fillMaxWidth())
+                    choices()
+                }
             }
         }
     }
@@ -409,7 +431,8 @@ internal fun LyricPicker(
                 lines == null -> Note("Looking for lyrics…")
                 lines.isEmpty() && offline -> Problem("You're offline. Connect to pick lyrics.", offline = true, onRetry = onRetry, color = Color.White.copy(alpha = 0.85f))
                 lines.isEmpty() -> Note("No lyrics for this song: its story has the cover.")
-                else -> LazyColumn(Modifier.fillMaxWidth().weight(1f), contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 40.dp)) {
+                // wider than a phone: the lines no wider than reads well, in the middle (Fit)
+                else -> LazyColumn(Modifier.align(Alignment.CenterHorizontally).widthIn(max = Fit.COLUMN).fillMaxWidth().weight(1f), contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 40.dp)) {
                     itemsIndexed(lines) { i, line ->
                         val on = i in picked
                         // picked lines share one highlight: round only where it starts and ends

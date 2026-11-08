@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -123,7 +124,8 @@ private fun NoticeCard(data: SnackbarData) {
     val action = (data.visuals as? Shown)?.notice?.action
     val shape = RoundedCornerShape(16.dp)
     Row(
-        Modifier.padding(horizontal = 12.dp, vertical = 8.dp).fillMaxWidth().shadow(14.dp, shape).clip(shape).background(Brand.Card)
+        // wider than a phone: a card at the top in the middle, not a bar across the screen (Fit)
+        Modifier.widthIn(max = Fit.COLUMN).padding(horizontal = 12.dp, vertical = 8.dp).fillMaxWidth().shadow(14.dp, shape).clip(shape).background(Brand.Card)
             .padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
