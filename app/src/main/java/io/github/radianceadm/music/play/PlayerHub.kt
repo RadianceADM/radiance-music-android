@@ -1,5 +1,6 @@
 package io.github.radianceadm.music.play
 
+import io.github.radianceadm.music.source.Art
 import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
@@ -29,7 +30,7 @@ import org.json.JSONObject
 fun Track.mediaItem(context: Context): MediaItem {
     val cover = Saver.coverFile(context, this)
     // a server's cover: this phone's key in its address (the lock screen's picture can't send one otherwise)
-    val art = if (cover.exists()) Uri.fromFile(cover) else art.takeIf { it.isNotEmpty() }?.let { Uri.parse(Servers.sign(it)) }
+    val art = if (cover.exists()) Uri.fromFile(cover) else art.takeIf { it.isNotEmpty() }?.let { Uri.parse(Servers.sign(Art.sized(it, Art.MEDIUM))) }
     val meta = MediaMetadata.Builder()
         .setTitle(title)
         .setArtist(artist)

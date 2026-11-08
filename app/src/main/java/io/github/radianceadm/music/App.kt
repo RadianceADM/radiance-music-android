@@ -98,6 +98,7 @@ class App : Application(), SingletonImageLoader.Factory {
         share = Session(this)
         party = Party(this)
         saveMissing()
+        sharpenCovers()
         // no music videos on the phone (owner, 2026-11-08, android#32): the ones kept before go by themselves
         scope.launch(Dispatchers.IO) { runCatching { Videos.forget(this@App) }.onFailure { android.util.Log.w("radiance-videos", "couldn't delete the kept videos", it) } }
         // back online: liked songs that couldn't be saved meanwhile are saved now
@@ -105,6 +106,7 @@ class App : Application(), SingletonImageLoader.Factory {
             Connectivity.online.drop(1).filter { it }.collect {
                 toldOffline = false
                 saveMissing()
+                sharpenCovers()
             }
         }
         Setup.check(this) // the splitter's model here or not (it downloads once the app opens: MainActivity)
@@ -207,9 +209,25 @@ class App : Application(), SingletonImageLoader.Factory {
         }
     }
 
+    private var sharpening: Job? = null
+
+    /** Liked songs' covers kept small before (YouTube Music's 120 px): fetched again big, quietly, one at a time. */
+    private fun sharpenCovers() {
+        if (sharpening?.isActive == true || !Connectivity.online.value) return
+        sharpening = scope.launch(Dispatchers.IO) {
+            for (t in library.liked.value) {
+                val f = Saver.coverFile(this@App, t)
+                if (f.exists() && io.github.radianceadm.music.source.Art.grows(t.art) && Saver.small(f)) runCatching { Saver.cover(this@App, t) }
+            }
+        }
+    }
+
     /** Pictures (covers) come through Http's client: a server's covers get this phone's key with them. */
     override fun newImageLoader(context: PlatformContext): ImageLoader =
-        ImageLoader.Builder(context).components { add(OkHttpNetworkFetcherFactory(callFactory = { Http.client })) }.build()
+        ImageLoader.Builder(context).components {
+            add(io.github.radianceadm.music.source.Art.Sizing) // each cover at the size it's drawn (a row small, Now Playing big)
+            add(OkHttpNetworkFetcherFactory(callFactory = { Http.client }))
+        }.build()
 
     /** Songs to share (null: Liked Songs); [scan]: straight to reading another's QR. */
     data class ShareAsk(val songs: List<Track>?, val scan: Boolean = false)

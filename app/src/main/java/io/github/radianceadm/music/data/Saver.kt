@@ -1,5 +1,7 @@
 package io.github.radianceadm.music.data
 
+import io.github.radianceadm.music.source.Art
+import android.graphics.BitmapFactory
 import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
@@ -138,14 +140,31 @@ object Saver {
 
     private fun audioOnly(f: File) = EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(f))).setRemoveVideo(true).build()
 
-    /** The song's cover kept here (for a liked song), if it isn't yet. */
+    /**
+     * The song's cover kept here (for a liked song), big ([Art.BIG]), if it isn't yet. One kept small before (YouTube
+     * Music's 120 px, the app's first versions) is fetched again big; if that fails, the small one stays.
+     */
     fun cover(context: Context, t: Track) {
         val f = coverFile(context, t)
-        if (f.exists() || t.art.isEmpty()) return
+        if (t.art.isEmpty()) return
+        val again = f.exists()
+        if (again && !(Art.grows(t.art) && small(f))) return
         f.parentFile?.mkdirs()
         val tmp = File(f.path + ".part")
-        tmp.outputStream().use { Http.download(t.art, it, null) }
-        tmp.renameTo(f)
+        try {
+            tmp.outputStream().use { Http.download(Art.sized(t.art, Art.BIG), it, null) }
+            tmp.renameTo(f)
+        } catch (e: Exception) {
+            tmp.delete()
+            if (!again) throw e
+        }
+    }
+
+    /** A kept cover too small for Now Playing or a story (under 600 px across). */
+    fun small(f: File): Boolean {
+        val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(f.path, o)
+        return o.outWidth in 1 until 600
     }
 
     /** The song's lyrics: kept ones first, else looked up (and kept, for a liked song). */

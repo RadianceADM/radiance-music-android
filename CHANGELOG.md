@@ -8,6 +8,10 @@
   tall, Now Playing puts the cover beside the controls; Lyrics take the cover's place, so the
   controls stay where they are. Sharing to a story shows the story beside its choices, and
   How to Use It puts each picture beside its words. On a phone held upright, nothing changes.
+- **Sharp covers:** songs found on YouTube Music came with a small cover (120 pixels), blurry
+  on Now Playing and on a story. Now each cover comes at the size it's shown: big on Now
+  Playing, in a story and in the cover kept with a liked song, small in lists so searching
+  uses little data. The covers of songs you liked before are fetched again big, by themselves.
 
 ## 1.0.5
 

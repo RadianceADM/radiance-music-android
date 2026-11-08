@@ -1,5 +1,6 @@
 package io.github.radianceadm.music.share
 
+import io.github.radianceadm.music.source.Art
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -51,13 +52,14 @@ object StoryCard {
     /** The song's cover (the saved one, else from the web), or null. Worker thread. */
     fun cover(context: Context, t: Track): Bitmap? {
         val saved = Saver.coverFile(context, t)
-        if (saved.exists()) BitmapFactory.decodeFile(saved.path)?.let { return it }
+        // the kept cover, unless it's a small one a big copy can be had of (it'd be blown up on the story)
+        if (saved.exists() && !(Art.grows(t.art) && Saver.small(saved))) BitmapFactory.decodeFile(saved.path)?.let { return it }
         if (t.art.isEmpty()) return null
         return runCatching {
-            Http.client.newCall(Request.Builder().url(t.art).header("User-Agent", Http.USER_AGENT).build()).execute().use { r ->
+            Http.client.newCall(Request.Builder().url(Art.sized(t.art, Art.BIG)).header("User-Agent", Http.USER_AGENT).build()).execute().use { r ->
                 if (r.isSuccessful) r.body.bytes().let { BitmapFactory.decodeByteArray(it, 0, it.size) } else null
             }
-        }.getOrNull()
+        }.getOrNull() ?: saved.takeIf { it.exists() }?.let { BitmapFactory.decodeFile(it.path) }
     }
 
     /** The card. [lyrics]: the lines picked (none: the cover big). */
