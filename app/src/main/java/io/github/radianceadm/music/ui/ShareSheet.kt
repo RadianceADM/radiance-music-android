@@ -4,6 +4,17 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.widthIn
@@ -400,6 +411,41 @@ internal fun LyricPicker(
     offline: Boolean = false, onRetry: () -> Unit = {}, onSay: (String) -> Unit = {},
 ) {
     val used = picked.sumOf { lines?.getOrNull(it)?.text?.length ?: 0 }
+    // hold a line, then slide up or down: the lines passed over are picked (owner, 2026-11-08: "click and swipe to
+    // select", android#37), next to each other and up to the story's limit; a tap still picks one, a quick swipe still scrolls
+    val list = rememberLazyListState()
+    val haptic = LocalHapticFeedback.current
+    val edgeZone = with(LocalDensity.current) { 64.dp.toPx() }
+    val edgeStep = with(LocalDensity.current) { 6.dp.toPx() }
+    var anchor by remember { mutableStateOf<Int?>(null) } // the line held, while the finger's down
+    var fingerY by remember { mutableFloatStateOf(0f) }
+    var edge by remember { mutableIntStateOf(0) } // -1 / 1: the finger at the top / bottom, the list scrolls that way
+    var warned by remember { mutableStateOf(false) }
+    fun lineAt(y: Float): Int? {
+        val info = list.layoutInfo
+        val shown = info.visibleItemsInfo.ifEmpty { return null }
+        val at = y + info.viewportStartOffset
+        return (shown.firstOrNull { at >= it.offset && at < it.offset + it.size } ?: if (at < shown.first().offset) shown.first() else shown.last()).index
+    }
+    fun slideTo(to: Int) {
+        val from = anchor ?: return
+        val lengths = lines?.map { it.text.length } ?: return
+        val (run, capped) = stretch(from, to, lengths)
+        if (capped && !warned) { warned = true; onSay("${StoryCard.MOST_CHARS} characters at most") }
+        if (run != picked.sorted()) {
+            picked.clear(); picked.addAll(run)
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        }
+    }
+    // the finger held at the top or bottom: the list goes on that way, a little each frame, picking as it goes
+    val scrolling by remember { derivedStateOf { anchor != null && edge != 0 } }
+    LaunchedEffect(scrolling) {
+        while (scrolling) {
+            withFrameNanos { }
+            list.scrollBy(edge * edgeStep)
+            lineAt(fingerY)?.let { slideTo(it) }
+        }
+    }
     Box(Modifier.fillMaxSize().background(tone).background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.15f), Color.Black.copy(alpha = 0.55f))))) {
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -423,7 +469,7 @@ internal fun LyricPicker(
                 }
             }
             Text(
-                if (withSound) "Tap the lines to share. The video plays them with the song, each lit as it's sung." else "Tap the lines to share.",
+                if (withSound) "Tap the lines to share, or hold one and slide. The video plays them with the song, each lit as it's sung." else "Tap the lines to share, or hold one and slide.",
                 color = Color.White.copy(alpha = 0.75f), style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 6.dp),
             )
@@ -432,7 +478,24 @@ internal fun LyricPicker(
                 lines.isEmpty() && offline -> Problem("You're offline. Connect to pick lyrics.", offline = true, onRetry = onRetry, color = Color.White.copy(alpha = 0.85f))
                 lines.isEmpty() -> Note("No lyrics for this song: its story has the cover.")
                 // wider than a phone: the lines no wider than reads well, in the middle (Fit)
-                else -> LazyColumn(Modifier.align(Alignment.CenterHorizontally).widthIn(max = Fit.COLUMN).fillMaxWidth().weight(1f), contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 40.dp)) {
+                else -> LazyColumn(
+                    Modifier.align(Alignment.CenterHorizontally).widthIn(max = Fit.COLUMN).fillMaxWidth().weight(1f)
+                        // once a line is held (the row takes the finger from the list), where the finger goes picks the lines
+                        .pointerInput(lines) {
+                            awaitPointerEventScope {
+                                while (true) {
+                                    val ch = awaitPointerEvent(PointerEventPass.Initial).changes.firstOrNull() ?: continue
+                                    if (anchor == null) continue
+                                    if (!ch.pressed) { anchor = null; edge = 0; continue }
+                                    fingerY = ch.position.y
+                                    edge = when { fingerY < edgeZone -> -1; fingerY > size.height - edgeZone -> 1; else -> 0 }
+                                    lineAt(fingerY)?.let { slideTo(it) }
+                                }
+                            }
+                        },
+                    state = list,
+                    contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 40.dp),
+                ) {
                     itemsIndexed(lines) { i, line ->
                         val on = i in picked
                         // picked lines share one highlight: round only where it starts and ends
@@ -444,10 +507,17 @@ internal fun LyricPicker(
                             fontSize = 24.sp, lineHeight = 31.sp, fontWeight = FontWeight.ExtraBold,
                             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart = top, topEnd = top, bottomStart = bottom, bottomEnd = bottom))
                                 .background(if (on) Color.White.copy(alpha = 0.14f) else Color.Transparent)
-                                .clickable {
-                                    val msg = pick(picked, i, lines.map { it.text.length })
-                                    if (msg != null) onSay(msg)
-                                }
+                                .combinedClickable(
+                                    onClick = {
+                                        val msg = pick(picked, i, lines.map { it.text.length })
+                                        if (msg != null) onSay(msg)
+                                    },
+                                    // held: the picking starts here, again from this line
+                                    onLongClick = {
+                                        if (line.text.length > StoryCard.MOST_CHARS) onSay("That line is longer than ${StoryCard.MOST_CHARS} characters")
+                                        else { picked.clear(); picked.add(i); warned = false; anchor = i }
+                                    },
+                                )
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                         )
                     }
@@ -462,6 +532,24 @@ internal fun LyricPicker(
  * after joins them (if the characters allow); any other line starts again from it.
  * What to say when it can't, else null.
  */
+/**
+ * Held at line [from] and slid to [to]: the lines from one to the other, next to each other, as many as fit the
+ * story's [StoryCard.MOST_CHARS] characters counting from the line held. Second: whether the limit cut it short.
+ */
+internal fun stretch(from: Int, to: Int, lengths: List<Int>): Pair<List<Int>, Boolean> {
+    val step = if (to >= from) 1 else -1
+    val run = mutableListOf(from)
+    var used = lengths[from]
+    var at = from
+    while (at != to) {
+        at += step
+        if (used + lengths[at] > StoryCard.MOST_CHARS) return run.sorted() to true
+        used += lengths[at]
+        run += at
+    }
+    return run.sorted() to false
+}
+
 internal fun pick(picked: MutableList<Int>, i: Int, lengths: List<Int>): String? {
     val most = StoryCard.MOST_CHARS
     val sorted = picked.sorted()

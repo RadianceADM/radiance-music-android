@@ -12,6 +12,8 @@
   on Now Playing and on a story. Now each cover comes at the size it's shown: big on Now
   Playing, in a story and in the cover kept with a liked song, small in lists so searching
   uses little data. The covers of songs you liked before are fetched again big, by themselves.
+- **Pick lyrics with one slide:** in Share → Lyrics, hold a line, then slide up or down. The
+  lines you pass over are picked (up to 150 characters). Tapping a line still works.
 
 ## 1.0.5
 
