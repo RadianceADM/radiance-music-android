@@ -21,6 +21,8 @@ data class Track(
     val format: String = "",
     /** The saved copy (a content:// address in Music/Radiance Music), once liked and saved. */
     val file: String? = null,
+    /** Its genres, looked up once for a liked song (Deezer, as the computer app: android#38); null: not looked up yet. */
+    val genres: List<String>? = null,
     // no music video: phones have none (owner, 2026-11-08, android#32); an old library's "video" is left unread
 ) {
     val key: String get() = when (source) {
@@ -36,11 +38,30 @@ data class Track(
 
     fun byline(): String = listOf(artist, album).filter { it.isNotBlank() }.joinToString(" · ")
 
+    /**
+     * Everyone on the song, one by one, as the computer app has them: the credit split ("A & B, C"), then whoever
+     * the title has featured ("Tamaraw (feat. KKRAM)"), each once.
+     */
+    fun artists(): List<String> {
+        val all = splitCredit(artist).toMutableList()
+        val low = title.lowercase()
+        for (tag in listOf("feat.", "ft.", "featuring ")) {
+            val at = low.indexOf(tag).takeIf { it >= 0 } ?: continue
+            val rest = title.substring(at + tag.length)
+            val end = rest.indexOfFirst { it == ')' || it == ']' }.takeIf { it >= 0 } ?: rest.length
+            all += splitCredit(rest.substring(0, end))
+            break
+        }
+        val seen = HashSet<String>()
+        return all.filter { seen.add(plain(it)) }
+    }
+
     fun toJson(): JSONObject = JSONObject()
         .put("source", when (source) { Source.ARCHIVE -> "archive"; Source.YOUTUBE -> "youtube"; Source.SERVER -> "server" })
         .put("id", id).put("title", title).put("artist", artist).put("album", album)
         .put("seconds", seconds).put("art", art).put("format", format)
         .put("file", file ?: JSONObject.NULL)
+        .put("genres", genres?.let { org.json.JSONArray(it) } ?: JSONObject.NULL)
 
     companion object {
         fun fromJson(o: JSONObject): Track? {
@@ -52,7 +73,8 @@ data class Track(
             }
             val id = o.optString("id").ifEmpty { return null }
             fun opt(k: String) = if (o.isNull(k)) null else o.optString(k).ifEmpty { null }
-            return Track(source, id, o.optString("title"), o.optString("artist"), o.optString("album"), o.optInt("seconds"), o.optString("art"), o.optString("format"), opt("file"))
+            val genres = o.optJSONArray("genres")?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { it.isNotEmpty() } }
+            return Track(source, id, o.optString("title"), o.optString("artist"), o.optString("album"), o.optInt("seconds"), o.optString("art"), o.optString("format"), opt("file"), genres)
         }
     }
 }

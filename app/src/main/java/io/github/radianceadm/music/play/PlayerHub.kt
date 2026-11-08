@@ -177,14 +177,45 @@ class PlayerHub(private val context: Context) {
     fun playWithRelated(t: Track) {
         play(listOf(t), 0)
         App.instance.scope.launch {
-            val seed = if (t.source == Source.YOUTUBE) t.id else runCatching { YouTube.search("${t.artist} ${t.title}").firstOrNull()?.id }.getOrNull()
-            val more = seed?.let { runCatching { YouTube.related(it) }.getOrNull() }.orEmpty().filter { it.key != t.key }.take(RELATED)
+            val more = relatedTo(t)
             if (more.isEmpty()) return@launch
             withContext(Dispatchers.Main) {
                 connect {
                     controller?.run {
                         // only while the pick still plays (moved on: dropped); songs added meanwhile stay, these after them (owner, radiance-music#47)
                         if (currentMediaItem?.mediaId == t.key) addMediaItems(more.map { App.instance.library.best(it).mediaItem(context) })
+                    }
+                }
+            }
+        }
+    }
+
+    /** Songs like [t] (YouTube Music's "Up next" for it; for a song from elsewhere, for its match there). */
+    private fun relatedTo(t: Track): List<Track> {
+        val seed = if (t.source == Source.YOUTUBE) t.id else runCatching { YouTube.search("${t.artist} ${t.title}").firstOrNull()?.id }.getOrNull()
+        return seed?.let { runCatching { YouTube.related(it) }.getOrNull() }.orEmpty().filter { it.key != t.key }.take(RELATED)
+    }
+
+    /**
+     * "Songs like this" in a song's menu (android#38; the computer app's Song Radio): the song playing goes on and
+     * songs like it are what comes next; another song plays now, with songs like it after it.
+     */
+    fun radio(t: Track) {
+        if (controller?.currentMediaItem?.mediaId != t.key) return playWithRelated(t)
+        App.instance.scope.launch {
+            val more = relatedTo(t)
+            if (more.isEmpty()) {
+                App.instance.tell(io.github.radianceadm.music.ui.Notice("Couldn't find songs like “${t.title}”. Try again in a bit."))
+                return@launch
+            }
+            withContext(Dispatchers.Main) {
+                connect {
+                    controller?.run {
+                        if (currentMediaItem?.mediaId != t.key) return@run // moved on meanwhile
+                        val next = currentMediaItemIndex + 1
+                        if (mediaItemCount > next) removeMediaItems(next, mediaItemCount)
+                        addMediaItems(more.map { App.instance.library.best(it).mediaItem(context) })
+                        App.instance.tell(io.github.radianceadm.music.ui.Notice("Up next: ${more.size} songs like “${t.title}”."))
                     }
                 }
             }

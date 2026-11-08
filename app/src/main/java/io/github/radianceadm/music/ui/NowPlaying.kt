@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.AutoFixOff
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -439,6 +440,8 @@ private fun More(t: Track, onShare: () -> Unit, onMixer: () -> Unit) {
             }
         }
         DropdownMenu(open, onDismissRequest = { open = false }, containerColor = Brand.Card) {
+            // the song goes on; songs like it come next (android#38, the computer app's Song Radio)
+            DropdownMenuItem(text = { Text("Songs like this") }, leadingIcon = { Icon(Icons.Rounded.Radio, null) }, onClick = { open = false; App.instance.player.radio(t) })
             DropdownMenuItem(text = { Text("Share to a story…") }, leadingIcon = { Icon(Icons.Rounded.IosShare, null) }, onClick = { open = false; onShare() })
             val lib = App.instance.library
             if (t.file != null || lib.best(t).file != null) DropdownMenuItem(

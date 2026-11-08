@@ -149,6 +149,9 @@ internal fun Radiance() {
     // a server's invite opened from its join page: Settings, where Servers asks to join it
     val asked by Servers.asked.collectAsState()
     LaunchedEffect(asked) { if (asked != null) settings = true }
+    // a card on Home (an album, artist or genre): Library, where it opens (android#38)
+    val shelf by io.github.radianceadm.music.data.Shelf.open.collectAsState()
+    LaunchedEffect(shelf) { if (shelf != null) tab = Tab.Library }
     val ctx = LocalContext.current
     // how to use it: the first time the app opens (under the start's splash, seen as it opens)
     var guide by rememberSaveable { mutableStateOf(Guide.due(ctx)) }

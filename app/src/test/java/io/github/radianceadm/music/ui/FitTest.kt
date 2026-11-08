@@ -17,6 +17,8 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import io.github.radianceadm.music.App
 import io.github.radianceadm.music.model.Source
 import io.github.radianceadm.music.model.Track
@@ -65,7 +67,11 @@ abstract class FitShots(private val size: String) {
         listOf("Moolah" to "Young Thug", "Blinding Lights" to "The Weeknd", "Cruel Summer" to "Taylor Swift", "Dilaw" to "Maki", "Pasilyo" to "SunKissed Lola",
             "Araw-Araw" to "Ben&Ben", "Like You Do" to "Joji", "Kathang Isip" to "Ben&Ben", "Tadhana" to "Up Dharma Down", "Espresso" to "Sabrina Carpenter",
             "Wildflower" to "Billie Eilish", "Sining" to "Dionela", "7 Rings" to "Ariana Grande")
-            .forEachIndexed { i, (title, artist) -> lib.like(Track(Source.YOUTUBE, "fit$i", title, artist, album = "Album $i", seconds = 200, format = if (i % 2 == 0) "FLAC" else "Opus")) }
+            .forEachIndexed { i, (title, artist) ->
+                // albums shared by a few, genres for most (one still being looked up)
+                val genres = listOf(listOf("Pop"), listOf("Rap/Hip Hop", "Pop"), listOf("OPM"), listOf("R&B"), null)[i % 5]
+                lib.like(Track(Source.YOUTUBE, "fit$i", title, artist, album = listOf("Pagsibol", "After Hours", "Lover", "")[i % 4], seconds = 200, format = if (i % 2 == 0) "FLAC" else "Opus", genres = genres))
+            }
         lib.like(song)
         fun <T> flow(name: String) = PlayerHub::class.java.getDeclaredField(name).apply { isAccessible = true }.get(App.instance.player) as MutableStateFlow<T>
         flow<Track?>("_current").value = song
@@ -76,6 +82,13 @@ abstract class FitShots(private val size: String) {
     @Test fun library() { playing(); shot("2-library", before = { rule.onAllNodesWithText("Library").onFirst().performClick() }) { Radiance() } }
     @Test fun search() { playing(); shot("3-search", before = { rule.onAllNodesWithText("Search").onFirst().performClick() }) { Radiance() } }
     @Test fun nowPlaying() { playing(); shot("4-now-playing") { NowPlayingScreen(onClose = {}) } }
+    // android#38: Library's Albums, Artists and Genres, and one artist opened (as a card on Home opens it)
+    private fun shelf(name: String, pill: String) { playing(); shot(name, before = { rule.onAllNodesWithText("Library").onFirst().performClick(); rule.waitForIdle(); rule.onAllNodesWithText(pill).onFirst().performClick() }) { Radiance() } }
+    @Test fun albums() = shelf("A-albums", "Albums")
+    @Test fun artists() = shelf("B-artists", "Artists")
+    @Test fun genres() = shelf("C-genres", "Genres")
+    @Test fun artistOpened() { playing(); io.github.radianceadm.music.data.Shelf.open.value = io.github.radianceadm.music.data.ShelfKind.Artists to "Ben&Ben"; shot("D-artist") { Radiance() } }
+    @Test fun homeRows() { playing(); shot("E-home-rows", before = { rule.onRoot().performTouchInput { swipeUp() } }) { Radiance() } }
     @Test fun lyrics() { playing(); shot("5-lyrics", before = { rule.onNodeWithContentDescription("Lyrics").performClick() }) { NowPlayingScreen(onClose = {}) } }
     @Test fun settings() = shot("6-settings") { SettingsScreen(onClose = {}, checkServers = false) }
     @Test fun guide() = shot("7-guide") { GuideScreen(onDone = {}) }

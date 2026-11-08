@@ -99,6 +99,7 @@ class App : Application(), SingletonImageLoader.Factory {
         party = Party(this)
         saveMissing()
         sharpenCovers()
+        fillGenres()
         // no music videos on the phone (owner, 2026-11-08, android#32): the ones kept before go by themselves
         scope.launch(Dispatchers.IO) { runCatching { Videos.forget(this@App) }.onFailure { android.util.Log.w("radiance-videos", "couldn't delete the kept videos", it) } }
         // back online: liked songs that couldn't be saved meanwhile are saved now
@@ -107,6 +108,7 @@ class App : Application(), SingletonImageLoader.Factory {
                 toldOffline = false
                 saveMissing()
                 sharpenCovers()
+                fillGenres()
             }
         }
         Setup.check(this) // the splitter's model here or not (it downloads once the app opens: MainActivity)
@@ -117,6 +119,7 @@ class App : Application(), SingletonImageLoader.Factory {
     fun like(t: Track) {
         library.like(t)
         scope.launch { saveOne(t) }
+        fillGenres()
     }
 
     fun unlike(t: Track) {
@@ -205,6 +208,30 @@ class App : Application(), SingletonImageLoader.Factory {
             while (again) {
                 again = false
                 for (t in library.liked.value.filter { it.file == null }) saveOne(t)
+            }
+        }
+    }
+
+    private var genresJob: Job? = null
+
+    /**
+     * Liked songs' genres (and an album for those without one) looked up, one at a time, gently, in the background
+     * (Deezer, as the computer app): Library's Albums and Genres and Home's rows fill in as they come (android#38).
+     */
+    private fun fillGenres() {
+        if (genresJob?.isActive == true || !Connectivity.online.value) return
+        genresJob = scope.launch(Dispatchers.IO) {
+            while (true) {
+                val todo = library.liked.value.filter { it.genres == null }
+                if (todo.isEmpty()) break
+                var answered = 0
+                for (t in todo) {
+                    kotlinx.coroutines.delay(250)
+                    val found = runCatching { io.github.radianceadm.music.source.Genres.lookup(t) }.getOrNull() ?: continue // couldn't ask: later
+                    answered++
+                    library.update(library.best(t).let { now -> now.copy(genres = found.genres, album = now.album.ifEmpty { found.album.orEmpty() }) })
+                }
+                if (answered == 0) break // nothing answered (offline): at the next start, or back online
             }
         }
     }

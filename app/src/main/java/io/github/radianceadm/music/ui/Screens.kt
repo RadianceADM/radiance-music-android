@@ -3,6 +3,8 @@ package io.github.radianceadm.music.ui
 import androidx.compose.material.icons.rounded.SortByAlpha
 import androidx.compose.foundation.background
 import kotlinx.coroutines.launch
+import io.github.radianceadm.music.data.ShelfKind
+import io.github.radianceadm.music.data.Shelf
 import io.github.radianceadm.music.data.Library
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.draw.drawBehind
@@ -172,6 +174,8 @@ fun HomeScreen(pad: PaddingValues, onSearch: () -> Unit, onSettings: () -> Unit)
                     itemsIndexed(newest) { i, t -> Card(t, onPlay = { hub.play(newest, i) }) }
                 }
             }
+            // as the computer app's Home: your albums, artists and genres (android#38); a card opens it in Library
+            for (kind in ShelfKind.entries) item(key = "shelf-${kind.name}") { ShelfRow(kind, remember(liked, kind) { Shelf.groups(liked, kind) }) }
         }
     }
 }
@@ -297,6 +301,17 @@ fun SearchScreen(pad: PaddingValues) {
 fun LibraryScreen(pad: PaddingValues, onSettings: () -> Unit, onParty: () -> Unit = {}) {
     var picked by rememberSaveable { mutableStateOf(LIKED) }
     var filter by rememberSaveable { mutableStateOf("") }
+    // Albums, Artists, Genres (android#38): the one opened there (its name), else their grid
+    var opened by rememberSaveable { mutableStateOf<String?>(null) }
+    // a card on Home: that album, artist or genre, here
+    val shelfAsked by Shelf.open.collectAsState()
+    LaunchedEffect(shelfAsked) {
+        shelfAsked?.let { (kind, name) ->
+            picked = SHELVES.entries.first { it.value == kind }.key
+            opened = name
+            Shelf.open.value = null
+        }
+    }
     val servers by Servers.list.collectAsState()
     // Settings → a server → Open its library: here, on it
     val opening by Servers.open.collectAsState()
@@ -309,20 +324,27 @@ fun LibraryScreen(pad: PaddingValues, onSettings: () -> Unit, onParty: () -> Uni
     // (a server's pill is its first address: the same after it moves)
     val server = servers.firstOrNull { it.first == picked }
     // a server left meanwhile: back to Liked Songs
+    val shelf = SHELVES[picked]
     val tab = when {
         picked == HISTORY -> 1
         server != null -> 2
+        shelf != null -> 3
         else -> 0
     }
     val pills: @Composable () -> Unit = {
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Chip("Liked Songs", App.instance.library.liked.collectAsState().value.size.takeIf { it > 0 }, tab == 0) { picked = LIKED }
             Chip("History", null, tab == 1) { picked = HISTORY }
+            SHELVES.forEach { (key, kind) -> Chip(kind.title, null, picked == key) { picked = key; opened = null } }
             servers.forEach { s -> Chip(s.name, null, s.first == server?.first) { picked = s.first } }
         }
     }
     if (server != null) {
         ServerLibrary(pad, server, header = { PageTitle("Library", onSettings); pills() }, onParty = onParty)
+        return
+    }
+    if (shelf != null) {
+        ShelfPage(pad, shelf, header = { PageTitle("Library", onSettings); pills() }, opened = opened, onOpen = { opened = it })
         return
     }
     val lib = App.instance.library
@@ -426,6 +448,8 @@ private fun DrawScope.heroSunset(t: Float) {
 /** Library's own lists (any other pill is a server: its address). */
 private const val LIKED = "liked"
 private const val HISTORY = "history"
+/** Library's shelves, by their pill's key (android#38). */
+private val SHELVES = linkedMapOf("albums" to ShelfKind.Albums, "artists" to ShelfKind.Artists, "genres" to ShelfKind.Genres)
 
 /** The rail's letters, in the order songs are filed (as the computer's). */
 private const val AZ = "ABCDEFGHIJKLMNOPQRSTUVWXYZ#"

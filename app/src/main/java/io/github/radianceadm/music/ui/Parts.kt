@@ -98,6 +98,8 @@ fun TrackRow(t: Track, onPlay: () -> Unit, highlight: Boolean = false, trailing:
         DropdownMenu(menu, onDismissRequest = { menu = false }) {
             DropdownMenuItem(text = { Text("Play Next") }, onClick = { hub.playNext(t); menu = false })
             DropdownMenuItem(text = { Text("Add to Queue") }, onClick = { hub.enqueue(t); menu = false })
+            // as the computer app's Song Radio (android#38): songs like it come next
+            DropdownMenuItem(text = { Text("Songs like this") }, onClick = { hub.radio(t); menu = false })
             DropdownMenuItem(text = { Text("Share…") }, onClick = { sharing = true; menu = false })
             if (t.file != null || App.instance.library.best(t).file != null) DropdownMenuItem(text = { Text("Send to a phone…") }, onClick = { App.instance.shareOpen.value = App.ShareAsk(listOf(App.instance.library.best(t))); menu = false })
         }

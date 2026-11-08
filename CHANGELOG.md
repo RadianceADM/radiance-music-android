@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.0
+
+- **Albums, Artists and Genres, as on the computer:** Library has them beside Liked Songs and
+  History, each a grid of cards; tap one for its songs, with Play and Shuffle. Everyone on a
+  song counts as its artist, the ones it features too. Genres are looked up once for each
+  liked song (Deezer's free catalogue, as the computer app does), and a song from YouTube
+  Music gets its album name the same way. Home shows a row of each.
+- **Songs like this:** in every song's menu (hold a song, or ⋯ in Now Playing). The song
+  playing goes on and songs like it come next; another song plays now with songs like it after.
+
 ## 1.1.0
 
 - **Made for tablets and car stereos:** on a tablet, an Android car stereo or a phone on its
