@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.2
+
+- **Updates download even on a busy day:** the update comes from Radiance's own server, and
+  if that server is busy or the download breaks off, the app goes on from GitHub's copy of
+  the same file, where it stopped. Either way it's checked to be the release's own file.
+
 ## 1.2.1
 
 - **Looking for updates works on busy networks:** the app now asks Radiance's own server

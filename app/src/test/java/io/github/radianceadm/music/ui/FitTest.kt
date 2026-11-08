@@ -15,7 +15,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
@@ -56,7 +56,8 @@ abstract class FitShots(private val size: String) {
         rule.waitForIdle()
         val dir = File(System.getenv("SCREENS_DIR") ?: "/srv/build/android/screens")
         if (!dir.canWrite()) return
-        val bmp: Bitmap = rule.onRoot().captureToImage().asAndroidBitmap()
+        // the app's own window (a pop-up that comes now and then, e.g. the feedback ask, is a second root)
+        val bmp: Bitmap = rule.onAllNodes(isRoot()).onFirst().captureToImage().asAndroidBitmap()
         File(dir, "$size-$name.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
@@ -88,7 +89,7 @@ abstract class FitShots(private val size: String) {
     @Test fun artists() = shelf("B-artists", "Artists")
     @Test fun genres() = shelf("C-genres", "Genres")
     @Test fun artistOpened() { playing(); io.github.radianceadm.music.data.Shelf.open.value = io.github.radianceadm.music.data.ShelfKind.Artists to "Ben&Ben"; shot("D-artist") { Radiance() } }
-    @Test fun homeRows() { playing(); shot("E-home-rows", before = { rule.onRoot().performTouchInput { swipeUp() } }) { Radiance() } }
+    @Test fun homeRows() { playing(); shot("E-home-rows", before = { rule.onAllNodes(isRoot()).onFirst().performTouchInput { swipeUp() } }) { Radiance() } }
     @Test fun lyrics() { playing(); shot("5-lyrics", before = { rule.onNodeWithContentDescription("Lyrics").performClick() }) { NowPlayingScreen(onClose = {}) } }
     @Test fun settings() = shot("6-settings") { SettingsScreen(onClose = {}, checkServers = false) }
     @Test fun guide() = shot("7-guide") { GuideScreen(onDone = {}) }

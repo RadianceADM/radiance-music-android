@@ -43,6 +43,13 @@ class UpdatesSourceTest {
         assertTrue(e?.message.orEmpty().contains("api.github.com answered 403"))
     }
 
+    // android#40: the file from Radiance's copy first; GitHub's only when it refuses or fails
+    @Test fun gitHubsFileOnlyAsTheMirrorsSecond() {
+        val fromMirror = Updates.releaseOf(release("v1.2.2", mirror))
+        assertEquals("$github/v1.2.2/RadianceMusic.apk", Updates.gitHubCopy(fromMirror))
+        assertEquals(null, Updates.gitHubCopy(Updates.releaseOf(release("v1.2.2", github)))) // GitHub's already: nothing second
+    }
+
     @Test fun aBrokenCopyIsPassedOver() {
         val r = Updates.latest { url -> if (url.contains("radianceph")) "<html>502 Bad Gateway</html>" else release("v1.2.1", github) }
         assertEquals("1.2.1", r.version)

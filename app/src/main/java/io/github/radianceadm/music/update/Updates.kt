@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
@@ -53,7 +54,8 @@ object Updates {
      * (the owner's S24, 2026-11-08: "Couldn't look for updates: 403"; GitHub's downloads timed out the same day).
      * GitHub is asked when the copy can't be had (android#39, as the computer app: radiance-music#71).
      */
-    private const val MIRROR = "https://downloads.radianceph.com/radiance-music-android/latest.json"
+    private const val MIRROR_HOST = "downloads.radianceph.com"
+    private const val MIRROR = "https://$MIRROR_HOST/radiance-music-android/latest.json"
     internal val SOURCES = listOf(MIRROR, LATEST)
     private const val PREFS = "updates"
     private const val EVERY_MS = 6 * 60 * 60 * 1000L
@@ -256,15 +258,25 @@ object Updates {
         )
     }
 
+    /**
+     * GitHub's copy of [r]'s file, the update's second place (android#40): only when Radiance's own copy (the
+     * mirror's address) refuses it or fails, never first (owner: the traffic on Radiance's side). The same file, so
+     * the same sha256 check; null when [r] isn't the mirror's (GitHub's already).
+     */
+    internal fun gitHubCopy(r: Release): String? =
+        if (r.apk.toHttpUrlOrNull()?.host == MIRROR_HOST) "https://github.com/RadianceADM/radiance-music-android/releases/download/v${r.version}/RadianceMusic.apk" else null
+
     private suspend fun download(app: App, r: Release): File {
         val done = file(app, r).apply { parentFile?.mkdirs() }
         if (done.length() > 0 && (r.size <= 0 || done.length() == r.size)) return done
         val part = File(done.parentFile, done.name + ".part")
+        val second = gitHubCopy(r)
+        var url = r.apk
         var tries = 0
         while (true) {
             val from = part.length()
             _state.value = State.Downloading(r, if (r.size > 0) from.toFloat() / r.size else 0f)
-            val req = Request.Builder().url(r.apk).header("User-Agent", "RadianceMusic-Android")
+            val req = Request.Builder().url(url).header("User-Agent", "RadianceMusic-Android")
                 .apply { if (from > 0) header("Range", "bytes=$from-") }.build()
             val ok = runCatching {
                 Http.client.newCall(req).execute().use resp@{ resp ->
@@ -291,6 +303,12 @@ object Updates {
                 }
             }
             if (ok.isSuccess && (r.size <= 0 || part.length() == r.size)) break
+            if (second != null && url != second) {
+                // Radiance's copy refused it (too many from one address), failed or dropped: GitHub's, from here, at once
+                Log.w(TAG, "the mirror's file failed: GitHub's copy", ok.exceptionOrNull())
+                url = second
+                continue
+            }
             if (++tries >= 5) throw ok.exceptionOrNull() ?: IllegalStateException("the download came short")
             delay(2_000L * tries) // a dropped connection: go on from here
         }
