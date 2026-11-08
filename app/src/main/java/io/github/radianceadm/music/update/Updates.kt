@@ -47,6 +47,14 @@ import java.security.MessageDigest
  */
 object Updates {
     private const val LATEST = "https://api.github.com/repos/RadianceADM/radiance-music-android/releases/latest"
+    /**
+     * Radiance's own copy of the newest release on Hostinger (the same JSON as GitHub's, its file there too), asked
+     * first: GitHub lets one internet address ask 60 times an hour, and an ISP can put many homes behind one address
+     * (the owner's S24, 2026-11-08: "Couldn't look for updates: 403"; GitHub's downloads timed out the same day).
+     * GitHub is asked when the copy can't be had (android#39, as the computer app: radiance-music#71).
+     */
+    private const val MIRROR = "https://downloads.radianceph.com/radiance-music-android/latest.json"
+    internal val SOURCES = listOf(MIRROR, LATEST)
     private const val PREFS = "updates"
     private const val EVERY_MS = 6 * 60 * 60 * 1000L
     /** "Remind me later": a day (owner, 2026-10-31). */
@@ -209,12 +217,30 @@ object Updates {
     /** On mobile data (or another metered network): the size is worth saying. */
     fun metered(context: Context) = context.getSystemService(ConnectivityManager::class.java)?.isActiveNetworkMetered ?: false
 
-    private fun latest(): Release {
-        val req = Request.Builder().url(LATEST).header("User-Agent", "RadianceMusic-Android").header("Accept", "application/vnd.github+json").build()
-        val body = Http.client.newCall(req).execute().use { r ->
-            check(r.isSuccessful) { "GitHub answered ${r.code}" }
+    /** The newest release, from the first of [SOURCES] that answers ([fetch]: an address's body, or it throws). */
+    internal fun latest(fetch: (String) -> String = ::fetch): Release {
+        var failed: Throwable? = null
+        for (url in SOURCES) {
+            try {
+                return releaseOf(fetch(url))
+            } catch (e: Exception) {
+                Log.w(TAG, "no answer from $url", e)
+                failed = e
+            }
+        }
+        throw failed ?: IllegalStateException("nowhere to look")
+    }
+
+    private fun fetch(url: String): String {
+        val req = Request.Builder().url(url).header("User-Agent", "RadianceMusic-Android").header("Accept", "application/vnd.github+json").build()
+        return Http.client.newCall(req).execute().use { r ->
+            check(r.isSuccessful) { "${req.url.host} answered ${r.code}" }
             r.body.string()
         }
+    }
+
+    /** A release as GitHub tells it (the mirror's latest.json is the same, its file's address there). */
+    internal fun releaseOf(body: String): Release {
         val j = JSONObject(body)
         val assets = j.getJSONArray("assets")
         val apk = (0 until assets.length()).map { assets.getJSONObject(it) }

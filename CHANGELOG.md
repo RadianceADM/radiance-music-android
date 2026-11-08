@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.1
+
+- **Looking for updates works on busy networks:** the app now asks Radiance's own server
+  (downloads.radianceph.com) for the newest version first, and downloads the update from
+  there. GitHub, asked before, turns a whole internet provider's customers away after 60
+  checks an hour, which showed as "Couldn't look for updates: 403". GitHub is still asked
+  when Radiance's server can't be reached.
+
 ## 1.2.0
 
 - **Albums, Artists and Genres, as on the computer:** Library has them beside Liked Songs and
