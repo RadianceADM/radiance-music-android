@@ -21,6 +21,8 @@ import io.github.radianceadm.music.R
 import io.github.radianceadm.music.model.Track
 import io.github.radianceadm.music.net.Errors
 import io.github.radianceadm.music.net.fail
+import io.github.radianceadm.music.server.ServerFirst
+import io.github.radianceadm.music.server.ServerUploads
 import io.github.radianceadm.music.ui.MainActivity
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -190,6 +192,12 @@ class SplitService : Service() {
                         song = app.library.best(t)
                     }
                     if (song.file == null) fail("It isn't saved on this phone: like it to save it.")
+                    // server first: its parts came (or are coming) from a server you joined, not split here
+                    if (Splitter.isSplit(this, t.key) || ServerFirst.coming(t.key) || ServerFirst.takeOver(app, song)) {
+                        splits.finished(t, null)
+                        app.mixer.recheck()
+                        continue
+                    }
                     var last = 0L
                     Splitter.split(this, song, splits.cores, { step ->
                         splits.report(t, step)
@@ -203,9 +211,14 @@ class SplitService : Service() {
                     Log.e("radiance-split", "split failed", e)
                     problem = Errors.say(e, offline = false) // in plain words (the log has the rest)
                 }
-                if (splits.stopAsked) problem = null
-                splits.finished(t, if (splits.stopAsked) null else problem)
-                if (problem == null && !splits.stopAsked) app.mixer.recheck()
+                val stopped = splits.stopAsked
+                if (stopped) problem = null
+                splits.finished(t, if (stopped) null else problem)
+                if (problem == null && !stopped) {
+                    app.mixer.recheck()
+                    // split here: it goes up to the servers you joined (they split it their own way)
+                    ServerUploads.queue(app, app.library.best(t))
+                }
             }
         } finally {
             if (lock.isHeld) lock.release()

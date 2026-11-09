@@ -110,11 +110,14 @@ class Rms(base: String, val token: String? = null, private val client: OkHttpCli
      * Adds a song to the server: its file ([song], [songName] like "Artist -
      * Title.m4a"), its details, and its cover and lyrics when there are.
      * [progress] gets the bytes sent so far. A song the server has already is
-     * skipped (only the extras it lacks are kept).
+     * skipped (only the extras it lacks are kept). The server splits every
+     * song it gets by itself (owner, 2026-11-09: "never mag kakaroon ng kanta
+     * sa server na hindi na iisplit"), unless [partsComing]: its four parts
+     * follow (POST /api/songs/ID/parts), so it doesn't split it again.
      */
     fun upload(
         song: Upload, artist: String, title: String, seconds: Int,
-        cover: Upload? = null, lyrics: Upload? = null, progress: (Long) -> Unit = {},
+        cover: Upload? = null, lyrics: Upload? = null, partsComing: Boolean = false, progress: (Long) -> Unit = {},
     ): Uploaded {
         var sent = 0L
         val counted = { n: Long -> sent += n; progress(sent) }
@@ -128,7 +131,7 @@ class Rms(base: String, val token: String? = null, private val client: OkHttpCli
             .build()
         // a big song on a slow connection: no time limit while it goes
         val slow = client.newBuilder().writeTimeout(0, TimeUnit.SECONDS).readTimeout(5, TimeUnit.MINUTES).build()
-        return Uploaded.from(call(request("/api/songs").post(form).build(), slow), ::id)
+        return Uploaded.from(call(request(if (partsComing) "/api/songs?parts=coming" else "/api/songs").post(form).build(), slow), ::id)
     }
 
     /** A file to send: its name, its size (-1: not known) and how to read it. */

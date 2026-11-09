@@ -95,6 +95,7 @@ class App : Application(), SingletonImageLoader.Factory {
         splits = Splits(this)
         io.github.radianceadm.music.split.Ahead(this).start() // karaoke on: the song playing and the next one get split (android#20)
         io.github.radianceadm.music.split.SplitLiked(this).start() // every liked song split by itself once it's saved
+        io.github.radianceadm.music.server.ServerUploads.start(this) // songs split here go up to the servers you joined (they wait while away)
         share = Session(this)
         party = Party(this)
         saveMissing()

@@ -67,8 +67,10 @@ class ServerSongsTest {
         assertEquals(listOf("drums", "bass", "other", "vocals"), got.parts?.added)
         assertEquals(1f, last, 0.001f)
         assertEquals("Added “Dilaw” to Bassi's server, with its parts. Everyone there can play it and mix it now.", ServerSongs.said(s, t, got))
-        // the song, then its parts (they need its id there)
-        assertEquals("/api/songs", server.takeRequest().url.encodedPath)
+        // the song, then its parts (they need its id there): the server's told they follow, so it doesn't split it again
+        val up = server.takeRequest()
+        assertEquals("/api/songs", up.url.encodedPath)
+        assertEquals("coming", up.url.queryParameter("parts"))
         val parts = server.takeRequest()
         assertEquals("/api/songs/7/parts", parts.url.encodedPath)
         val form = parts.body!!.string(Charsets.ISO_8859_1)

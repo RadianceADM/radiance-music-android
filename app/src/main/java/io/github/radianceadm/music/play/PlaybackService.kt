@@ -27,7 +27,9 @@ import com.google.common.util.concurrent.ListenableFuture
 import io.github.radianceadm.music.App
 import io.github.radianceadm.music.feedback.Feedback
 import io.github.radianceadm.music.net.Errors
+import io.github.radianceadm.music.model.Source
 import io.github.radianceadm.music.net.Http
+import io.github.radianceadm.music.server.ServerFirst
 import io.github.radianceadm.music.server.Servers
 import io.github.radianceadm.music.source.YouTube
 import io.github.radianceadm.music.ui.MainActivity
@@ -50,7 +52,8 @@ class PlaybackService : MediaSessionService() {
         val upstream = DefaultDataSource.Factory(this, http)
         val resolving = ResolvingDataSource.Factory(upstream) { spec ->
             when (spec.uri.scheme) {
-                "yt" -> spec.withUri(Uri.parse(YouTube.audio(spec.uri.schemeSpecificPart).url))
+                // server first: a server you joined has the song, so it plays from there (YouTube when it doesn't)
+                "yt" -> spec.withUri(Uri.parse(spec.uri.schemeSpecificPart.let { id -> ServerFirst.stream(id) ?: YouTube.audio(id).url }))
                 else -> Servers.sign(spec.uri.toString()).let { signed -> if (signed == spec.uri.toString()) spec else spec.withUri(Uri.parse(signed)) }
             }
         }
@@ -84,6 +87,11 @@ class PlaybackService : MediaSessionService() {
                 Log.w("radiance-play", "a song wouldn't play", error)
                 val hub = App.instance.player
                 val song = player.currentMediaItem?.let { trackOf(it) }
+                // server first: its server's copy wouldn't play (away from home): the same song again, from YouTube
+                if (song != null && song.source == Source.YOUTUBE && song.file == null && ServerFirst.wouldntPlay(song.id)) {
+                    player.prepare()
+                    return
+                }
                 val then = hub.streak.failed(player.hasNextMediaItem())
                 if (then == Streak.Then.NEXT) {
                     player.seekToNextMediaItem()

@@ -48,21 +48,7 @@ object ServerSongs {
         _saving.value = _saving.value + t.key
         app.scope.launch {
             try {
-                // the server's lyrics (with each word's time) are kept first, so they're the ones saved
-                if (!Saver.lyricsFile(app, t).exists()) lyricsText(song)?.let { text -> into(Saver.lyricsFile(app, t)) { it.write(text.toByteArray()) } }
-                // its parts, as if split here: the Mixer plays them, Share Songs sends them on
-                if (song.split && !Splitter.parts(app, t.key).keys.containsAll(Splitter.FOUR)) {
-                    // fetched for the Mixer already: copied from there, not downloaded again
-                    val fetched = parts(app, t)
-                    for (part in Mixer.PARTS) {
-                        val f = song.files[part] ?: continue
-                        val ext = f.name.substringAfterLast('.', "m4a").lowercase()
-                        val to = Splitter.partFileFor(app, t.key, part, ext).also { Splitter.dir(app).mkdirs() }
-                        val have = fetched[part]
-                        if (have != null) into(to) { out -> have.inputStream().use { it.copyTo(out) } } else download(f.url, to)
-                    }
-                    app.mixer.recheck()
-                }
+                if (keepParts(app, song, t)) app.mixer.recheck()
                 if (app.saveLiked(t)) {
                     val with = listOfNotNull("its parts".takeIf { song.split }, "lyrics".takeIf { song.lyrics }).joinToString(" and ")
                     app.tell(Notice("Saved “${song.title}” on this phone${if (with.isEmpty()) "" else ", with $with"}. It's in Liked Songs."))
@@ -74,6 +60,27 @@ object ServerSongs {
                 _saving.value = _saving.value - t.key
             }
         }
+    }
+
+    /**
+     * [song]'s lyrics and parts (from its server) kept here as [t]'s, as if split here: the
+     * Mixer plays them, Share Songs sends them on. [t]: the server's own song, or the same song
+     * from YouTube whose copy it is (server first: ServerFirst). The server's lyrics (with each
+     * word's time) are kept first, so they're the ones saved. True: parts were kept now.
+     */
+    fun keepParts(context: Context, song: ServerSong, t: Track): Boolean {
+        if (!Saver.lyricsFile(context, t).exists()) lyricsText(song)?.let { text -> into(Saver.lyricsFile(context, t)) { it.write(text.toByteArray()) } }
+        if (!song.split || Splitter.parts(context, t.key).keys.containsAll(Splitter.FOUR)) return false
+        // fetched for the Mixer already: copied from there, not downloaded again
+        val fetched = parts(context, t)
+        for (part in Mixer.PARTS) {
+            val f = song.files[part] ?: continue
+            val ext = f.name.substringAfterLast('.', "m4a").lowercase()
+            val to = Splitter.partFileFor(context, t.key, part, ext).also { Splitter.dir(context).mkdirs() }
+            val have = fetched[part]
+            if (have != null) into(to) { out -> have.inputStream().use { it.copyTo(out) } } else download(f.url, to)
+        }
+        return true
     }
 
     /** [url] (on a joined server: its key goes along) into [f], whole or not at all. */
@@ -285,7 +292,7 @@ object ServerSongs {
         val partsSize = parts?.values?.sumOf { it.size } ?: 0L
         val total = (listOfNotNull(size.takeIf { it > 0 }, cover?.size, lyrics?.size).sum() + partsSize).coerceAtLeast(1)
         return try {
-            val got = s.rms.upload(song, t.artist, t.title, t.seconds, cover, lyrics) { sent -> progress((sent.toFloat() / total).coerceIn(0f, 1f)) }
+            val got = s.rms.upload(song, t.artist, t.title, t.seconds, cover, lyrics, partsComing = parts != null) { sent -> progress((sent.toFloat() / total).coerceIn(0f, 1f)) }
             // split here, and not there: its parts too (after the song: they need its id there)
             val there = got.song
             val sentParts = if (parts != null && there != null && !there.split) {

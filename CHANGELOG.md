@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.3.0
+
+- **Your server first:** on a server you were invited to, a song that server has already
+  comes from there, already split, with its lyrics: no YouTube, no splitting on your phone.
+  A song it doesn't have plays from YouTube right away. Away from home, or if the server stops
+  answering, the song goes on from YouTube.
+- **Songs you split go to your server:** a song split on your phone goes up to the servers
+  you joined by itself, and the server splits it its own way, so the next person gets it
+  ready. Away from the server, they wait on your phone and go up when it answers again, on
+  Wi-Fi only.
+- Only the same version counts: "Dilaw (Acoustic)" never plays for "Dilaw".
+
 ## 1.2.3
 
 - **Every cover shows again:** some songs showed a plain note instead of their cover, though

@@ -17,6 +17,9 @@ import io.github.radianceadm.music.model.Source
 import io.github.radianceadm.music.model.Track
 import io.github.radianceadm.music.net.Http
 import io.github.radianceadm.music.net.fail
+import io.github.radianceadm.music.server.Server
+import io.github.radianceadm.music.server.ServerFirst
+import io.github.radianceadm.music.server.ServerSong
 import io.github.radianceadm.music.server.ServerSongs
 import io.github.radianceadm.music.source.Lyrics
 import io.github.radianceadm.music.source.LyricsFinder
@@ -119,6 +122,15 @@ object Saver {
         if (t.source != Source.YOUTUBE) {
             return keep(context, collection, "${name(t)}.flac", "audio/flac", "Music/Radiance Music") { out -> Http.download(t.id, out, null) }
         }
+        // server first: a server you joined has it, so it comes from there (with its parts), not YouTube
+        ServerFirst.copy(t)?.let { (s, song) ->
+            try {
+                return fromServer(context, collection, t, s, song)
+            } catch (e: Exception) {
+                android.util.Log.w("radiance-save", "${s.name} didn't send “${t.title}”: from YouTube instead", e)
+                ServerFirst.forget(t)
+            }
+        }
         val cache = File(context.cacheDir, "song-${safe(t.key)}").apply { mkdirs() }
         try {
             val s = YouTube.audio(t.id)
@@ -135,6 +147,23 @@ object Saver {
             return keep(context, collection, "${name(t)}.m4a", "audio/mp4", "Music/Radiance Music") { out -> m4a.inputStream().use { it.copyTo(out) } }
         } finally {
             cache.deleteRecursively()
+        }
+    }
+
+    /**
+     * [t] (from YouTube) saved from its copy on [s], [song]: its parts and lyrics first (so a
+     * split waiting for the song sees them there, and doesn't split it), then the file as it is
+     * there. Not split there yet: the server's asked to, and its parts come when they're done.
+     */
+    private suspend fun fromServer(context: Context, collection: Uri, t: Track, s: Server, song: ServerSong): Uri {
+        val app = context.applicationContext as io.github.radianceadm.music.App
+        if (ServerSongs.keepParts(context, song, t)) withContext(Dispatchers.Main) { app.mixer.recheck() }
+        else ServerFirst.splitThere(app, s, song, t)
+        val ext = song.file.substringAfterLast('.', "m4a").lowercase().filter { it.isLetterOrDigit() }.take(5)
+        val mime = when (ext) { "flac" -> "audio/flac"; "opus", "ogg" -> "audio/ogg"; else -> "audio/mp4" }
+        val size = song.files["song"]?.size?.takeIf { it > 0 }
+        return keep(context, collection, "${name(t)}.$ext", mime, "Music/Radiance Music") { out ->
+            Http.download(song.url, out, size) { f -> _got.value = t.key to f }
         }
     }
 

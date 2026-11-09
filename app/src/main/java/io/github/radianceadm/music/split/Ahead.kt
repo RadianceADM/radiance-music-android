@@ -3,6 +3,7 @@ package io.github.radianceadm.music.split
 import io.github.radianceadm.music.App
 import io.github.radianceadm.music.model.Track
 import io.github.radianceadm.music.play.Mixer
+import io.github.radianceadm.music.server.ServerFirst
 import io.github.radianceadm.music.server.ServerSongs
 import io.github.radianceadm.music.server.Servers
 import kotlinx.coroutines.Dispatchers
@@ -40,7 +41,7 @@ class Ahead(private val app: App) {
 
     /** Its parts are here, or on their way (split here, or fetched). */
     private fun ready(t: Track): Boolean =
-        app.mixer.hasParts(t) || app.splits.waiting(t.key) || app.splits.now.value?.track?.key == t.key || t.key in fetching
+        app.mixer.hasParts(t) || app.splits.waiting(t.key) || app.splits.now.value?.track?.key == t.key || t.key in fetching || ServerFirst.coming(t.key)
 
     private suspend fun get(t: Track) {
         val server = Servers.of(t)
@@ -82,7 +83,8 @@ class SplitLiked(private val app: App) {
         app.scope.launch {
             combine(app.library.liked, app.splits.done) { liked, _ -> liked }.collectLatest { liked ->
                 delay(1500) // Liked Songs settles first (a hundred songs coming back change it a hundred times)
-                val ready = { t: Track -> app.mixer.hasParts(t) || app.splits.waiting(t.key) || app.splits.now.value?.track?.key == t.key }
+                // (a song a server you joined is splitting: its parts come from there, ServerFirst)
+                val ready = { t: Track -> app.mixer.hasParts(t) || app.splits.waiting(t.key) || app.splits.now.value?.track?.key == t.key || ServerFirst.coming(t.key) }
                 val todo = wanted(liked, ready, { Servers.of(it) != null }, app.splits::failed)
                 if (todo.isNotEmpty()) withContext(Dispatchers.Main) { todo.forEach { app.splits.add(it) } }
             }

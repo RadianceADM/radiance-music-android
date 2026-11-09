@@ -16,6 +16,7 @@ import io.github.radianceadm.music.App
 import io.github.radianceadm.music.data.Saver
 import io.github.radianceadm.music.model.Source
 import io.github.radianceadm.music.model.Track
+import io.github.radianceadm.music.server.ServerFirst
 import io.github.radianceadm.music.server.Servers
 import io.github.radianceadm.music.source.YouTube
 import io.github.radianceadm.music.ui.Notice
@@ -28,6 +29,7 @@ import org.json.JSONObject
 
 /** A song as the player holds it (the song itself rides along in its extras). */
 fun Track.mediaItem(context: Context): MediaItem {
+    ServerFirst.queued(this) // its stream can be a joined server's copy (server first)
     val cover = Saver.coverFile(context, this)
     // a server's cover: this phone's key in its address (the lock screen's picture can't send one otherwise)
     val art = if (cover.exists()) Uri.fromFile(cover) else art.takeIf { it.isNotEmpty() }?.let { Uri.parse(Servers.sign(Art.sized(it, Art.MEDIUM))) }
