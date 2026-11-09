@@ -61,11 +61,12 @@ class Library(context: Context) {
 
     /**
      * A liked song again, now with its saved copy, or its genres and album (Genres): what one side found isn't lost to
-     * the other (a save finishing while its genres come keeps them, and the other way round).
+     * the other (a save finishing while its genres come keeps them, and the other way round), and a copy that came
+     * without a cover's address keeps the one it had (android#41: an import from the computer blanked them).
      */
     fun update(t: Track) {
         if (!isLiked(t.key)) return
-        _liked.value = _liked.value.map { if (it.key == t.key) t.copy(genres = t.genres ?: it.genres, album = t.album.ifEmpty { it.album }, file = t.file ?: it.file) else it }
+        _liked.value = _liked.value.map { if (it.key == t.key) t.copy(genres = t.genres ?: it.genres, album = t.album.ifEmpty { it.album }, art = t.art.ifEmpty { it.art }, file = t.file ?: it.file) else it }
         save("liked.json", _liked.value)
     }
 

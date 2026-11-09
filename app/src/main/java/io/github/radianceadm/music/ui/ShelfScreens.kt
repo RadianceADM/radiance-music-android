@@ -91,7 +91,7 @@ private fun toneOf(name: String) = GENRE_TONES[Math.floorMod(name.lowercase().ha
 @Composable
 fun GroupCard(kind: ShelfKind, g: Group, modifier: Modifier = Modifier, onOpen: () -> Unit) {
     val press = remember { MutableInteractionSource() }
-    val art = g.songs.firstOrNull { it.art.isNotEmpty() }?.art
+    val art = g.songs.firstNotNullOfOrNull { pictureOf(it) }
     Column(
         modifier.pressScale(press).clip(RoundedCornerShape(16.dp)).clickable(interactionSource = press, indication = null, onClick = onOpen).padding(bottom = 4.dp),
         horizontalAlignment = if (kind == ShelfKind.Artists) Alignment.CenterHorizontally else Alignment.Start,
@@ -195,7 +195,7 @@ private fun ShelfGrid(pad: PaddingValues, kind: ShelfKind, groups: List<Group>, 
 @Composable
 private fun GroupSongs(pad: PaddingValues, kind: ShelfKind, g: Group, onBack: () -> Unit) {
     val hub = App.instance.player
-    val art = g.songs.firstOrNull { it.art.isNotEmpty() }?.art
+    val art = g.songs.firstNotNullOfOrNull { pictureOf(it) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = pad.calculateTopPadding(), bottom = pad.calculateBottomPadding() + 12.dp)) {
         item {
             Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 12.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {

@@ -113,7 +113,7 @@ object PhoneShare {
                     saved[item.key] = uri.toString()
                 }
                 "lyrics" -> into(Saver.lyricsFile(context, t), input)
-                "cover" -> into(Saver.coverFile(context, t), input)
+                "cover" -> into(Saver.coverFile(context, t), input).also { Saver.coverKept(t.key) }
                 else -> into(Splitter.partFileFor(context, t.key, kind, ext.ifEmpty { "m4a" }).also { Splitter.dir(context).mkdirs() }, input)
             }
         }

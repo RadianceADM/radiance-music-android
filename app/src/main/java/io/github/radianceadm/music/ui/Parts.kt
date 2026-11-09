@@ -43,6 +43,12 @@ import io.github.radianceadm.music.model.Track
 import io.github.radianceadm.music.model.clock
 
 /** A song's cover (or a note while there's none), with soft corners. */
+/**
+ * The picture to show for a song: its cover kept on this phone first (sharp, there offline, and there for a song that
+ * came without a cover's address: android#41), else its address.
+ */
+fun pictureOf(t: Track): String? = io.github.radianceadm.music.data.Saver.keptCover(App.instance, t) ?: t.art.ifEmpty { null }
+
 @Composable
 fun Artwork(url: String?, size: Dp, corner: Dp = 10.dp, modifier: Modifier = Modifier) {
     Box(modifier.size(size).clip(RoundedCornerShape(corner)).background(Brand.Card), contentAlignment = Alignment.Center) {
@@ -87,7 +93,7 @@ fun TrackRow(t: Track, onPlay: () -> Unit, highlight: Boolean = false, trailing:
             .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Artwork(t.art, 50.dp)
+        Artwork(pictureOf(t), 50.dp)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(t.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -112,7 +118,7 @@ fun TrackRow(t: Track, onPlay: () -> Unit, highlight: Boolean = false, trailing:
 fun Card(t: Track, onPlay: () -> Unit, size: Dp = 150.dp) {
     // (the cover rounds itself: a clip on the whole card cut the corner off the artist's line)
     Column(Modifier.width(size).combinedClickableSimple(onPlay).padding(bottom = 2.dp)) {
-        Artwork(t.art, size, corner = 16.dp)
+        Artwork(pictureOf(t), size, corner = 16.dp)
         Text(t.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
         Text(t.artist, style = MaterialTheme.typography.bodyMedium, color = Brand.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }

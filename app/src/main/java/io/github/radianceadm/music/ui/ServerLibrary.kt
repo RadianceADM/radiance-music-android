@@ -573,7 +573,7 @@ private fun AddToServerSheet(server: Server, onServer: List<ServerSong>, onAdded
                             Modifier.fillMaxWidth().clickable(enabled = (!there || parts) && going == null) { ServerSongs.add(app, server, t, onServer = copy, then = onAdded) }.padding(horizontal = 18.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Artwork(t.art, 46.dp)
+                            Artwork(pictureOf(t), 46.dp)
                             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                                 Text(t.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(t.artist, color = Brand.Dim, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)

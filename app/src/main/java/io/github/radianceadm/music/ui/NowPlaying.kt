@@ -302,7 +302,7 @@ fun NowPlayingScreen(onClose: () -> Unit) {
             }
             if (t != null) KaraokeStatus(t)
         }
-        Backdrop(t?.art)
+        Backdrop(t?.let(::pictureOf))
         if (side) {
             Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().sideCutoutPadding().padding(horizontal = 26.dp)) {
                 Grabber(onClose, pulled, let)
@@ -336,7 +336,7 @@ fun NowPlayingScreen(onClose: () -> Unit) {
                                 label = "small cover",
                             ) {
                                 Row {
-                                    SmallCover(t?.art)
+                                    SmallCover(t?.let(::pictureOf))
                                     Spacer(Modifier.width(14.dp))
                                 }
                             }
@@ -353,7 +353,7 @@ fun NowPlayingScreen(onClose: () -> Unit) {
                 OfflinePill()
                 if (t != null && showLyrics) {
                     Row(Modifier.padding(top = 6.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        SmallCover(t.art)
+                        SmallCover(pictureOf(t))
                         Spacer(Modifier.width(14.dp))
                         SongTitle(t, Modifier.weight(1f), small = true, note = problem)
                         songActions(t)
@@ -528,10 +528,10 @@ private fun SwipeCover(
         }
         Box(Modifier.fillMaxSize().then(gesture)) {
             if (!neighboursWhileMoving || moving) {
-                prev?.let { Cover(it.art, shape, Modifier.graphicsLayer { translationX = offset.value - gap; scaleX = 0.8f; scaleY = 0.8f }) }
-                next?.let { Cover(it.art, shape, Modifier.graphicsLayer { translationX = offset.value + gap; scaleX = 0.8f; scaleY = 0.8f }) }
+                prev?.let { Cover(pictureOf(it), shape, Modifier.graphicsLayer { translationX = offset.value - gap; scaleX = 0.8f; scaleY = 0.8f }) }
+                next?.let { Cover(pictureOf(it), shape, Modifier.graphicsLayer { translationX = offset.value + gap; scaleX = 0.8f; scaleY = 0.8f }) }
             }
-            Cover(t?.art, shape, Modifier.graphicsLayer { translationX = offset.value; scaleX = scale; scaleY = scale })
+            Cover(t?.let(::pictureOf), shape, Modifier.graphicsLayer { translationX = offset.value; scaleX = scale; scaleY = scale })
         }
     }
 }
@@ -1174,7 +1174,7 @@ fun MiniPlayer(onOpen: () -> Unit) {
             }.graphicsLayer { translationX = slide.value; alpha = 1f - (abs(slide.value) / size.width.coerceAtLeast(1f)).coerceIn(0f, 1f) * 0.7f },
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Artwork(t.art, 44.dp, corner = 10.dp)
+            Artwork(pictureOf(t), 44.dp, corner = 10.dp)
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 Text(t.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 // why the music stopped, in its place while there's one; in a party, that it's the party's

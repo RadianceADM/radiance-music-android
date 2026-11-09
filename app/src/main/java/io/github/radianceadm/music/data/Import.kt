@@ -59,6 +59,7 @@ object Import {
             // its cover and its lyrics where the app keeps them
             e.optString("cover").takeIf { it.isNotEmpty() }?.let { File(dir(context), it) }?.takeIf { it.exists() }?.let { c ->
                 Saver.coverFile(context, t).apply { parentFile?.mkdirs() }.let { c.copyTo(it, overwrite = true) }
+                Saver.coverKept(t.key)
             }
             val lyrics = e.optString("lyricsfile").takeIf { it.isNotEmpty() }?.let { File(dir(context), it) }?.takeIf { it.exists() }?.let { lyricsfile(it.readText()) }
                 ?: e.optString("lrc").takeIf { it.isNotEmpty() }?.let { File(dir(context), it) }?.takeIf { it.exists() }?.let { LyricsFinder.fromFile(it.readText()) }

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.3
+
+- **Every cover shows again:** some songs showed a plain note instead of their cover, though
+  the cover was on the phone (songs brought over from the computer, and songs whose cover's
+  address got lost). Now the app shows the cover kept on your phone first, sharp and even
+  offline, and a song's cover address is never replaced by an empty one.
+
 ## 1.2.2
 
 - **Updates download even on a busy day:** the update comes from Radiance's own server, and

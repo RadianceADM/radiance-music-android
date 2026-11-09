@@ -43,6 +43,23 @@ object Saver {
     internal fun safe(key: String) = key.map { if (it.isLetterOrDigit()) it else '_' }.joinToString("")
 
     fun coverFile(context: Context, t: Track) = File(context.filesDir, "covers/${safe(t.key)}.jpg")
+
+    /** Whether each song has a cover kept here, looked at once (the lists ask often); forgotten when one is kept anew. */
+    private val kept = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+
+    /**
+     * The song's cover kept on this phone, as an address a picture loads (null: none kept): what the screens show first
+     * (android#41: songs that came without a cover's address showed none, though their cover was here).
+     */
+    fun keptCover(context: Context, t: Track): String? {
+        val f = coverFile(context, t)
+        return if (kept.getOrPut(t.key) { f.exists() }) f.path else null
+    }
+
+    /** A cover was just kept (or replaced) for [key]: looked at again next time. */
+    fun coverKept(key: String) {
+        kept.remove(key)
+    }
     fun lyricsFile(context: Context, t: Track) = File(context.filesDir, "lyrics/${safe(t.key)}.lrc")
 
     private val _got = MutableStateFlow<Pair<String, Float>?>(null)
@@ -154,6 +171,7 @@ object Saver {
         try {
             tmp.outputStream().use { Http.download(Art.sized(t.art, Art.BIG), it, null) }
             tmp.renameTo(f)
+            coverKept(t.key)
         } catch (e: Exception) {
             tmp.delete()
             if (!again) throw e
